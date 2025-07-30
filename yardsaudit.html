@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clear Edge Sports - NFL Receiving Yards Model</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #111a29;
+            color: white;
+            padding: 20px;
+            line-height: 1.6;
+            position: relative;
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+        
+        /* Enhanced animated background - matching business site */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                linear-gradient(135deg, #111a29 0%, #1a2332 30%, #0f1419 70%, #111a29 100%);
+            z-index: -2;
+        }
+
+        body::after {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: 
+                conic-gradient(from 0deg at 25% 25%, transparent 0deg, rgba(59, 130, 246, 0.08) 45deg, transparent 90deg),
+                conic-gradient(from 180deg at 75% 75%, transparent 0deg, rgba(255, 215, 0, 0.08) 45deg, transparent 90deg),
+                conic-gradient(from 90deg at 50% 50%, transparent 0deg, rgba(139, 69, 19, 0.05) 30deg, transparent 60deg);
+            animation: rotate 25s linear infinite;
+            z-index: -1;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        .password-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(10px);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .password-container {
+            background: rgba(255, 255, 255, 0.03);
+            border: 2px solid rgba(255, 215, 0, 0.3);
+            border-radius: 20px;
+            padding: 50px;
+            text-align: center;
+            max-width: 450px;
+            width: 100%;
+            backdrop-filter: blur(15px);
+            position: relative;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+        }
+
+        .password-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #FFD700, transparent);
+            animation: shimmer 3s ease-in-out infinite alternate;
+        }
+
+        @keyframes shimmer {
+            0% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+        
+        .password-title {
+            font-size: 28px;
+            font-weight: 900;
+            color: #FFD700;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.5);
+        }
+
+        .password-subtitle {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 30px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        .password-input {
+            width: 100%;
+            padding: 18px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 215, 0, 0.3);
+            border-radius: 12px;
+            color: white;
+            font-size: 18px;
+            text-align: center;
+            letter-spacing: 2px;
+            transition: all 0.3s ease;
+            margin: 20px 0;
+            outline: none;
+            font-weight: 600;
+        }
+
+        .password-input:focus {
+            border-color: #FFD700;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+            transform: scale(1.02);
+        }
+
+        .password-input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+            font-weight: 400;
+        }
+        
+        .password-submit {
+            width: 100%;
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            color: #111a29;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 800;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 5px 20px rgba(255, 215, 0, 0.3);
+        }
+
+        .password-submit:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 8px 25px rgba(255, 215, 0, 0.5);
+        }
+        
+        .password-submit:active {
+            transform: translateY(0);
+        }
+        
+        .password-error {
+            color: #ff4444;
+            font-size: 14px;
+            margin-top: 15px;
+            display: none;
+            font-weight: 600;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.3);
+        }
+        
+        .main-content {
+            display: none;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 20px;
+            font-size: 3rem;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.5);
+        }
+
+        .model-subtitle {
+            text-align: center;
+            color: #FFD700;
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: 700;
+            margin-bottom: 40px;
+        }
+        
+        .input-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 2px solid rgba(255, 215, 0, 0.15);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(15px);
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 30px;
+        }
+
+        .input-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #FFD700, transparent);
+            animation: shimmer 3s ease-in-out infinite alternate;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #FFD700;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        input[type="file"], select {
+            width: 100%;
+            padding: 12px 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 215, 0, 0.3);
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            outline: none;
+        }
+        
+        select:focus {
+            border-color: #FFD700;
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.2);
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        input[type="file"] {
+            color: rgba(255, 255, 255, 0.7);
+            padding: 15px;
+        }
+
+        input[type="file"]::-webkit-file-upload-button {
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            color: #111a29;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 15px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        
+        .calculate-btn {
+            width: 100%;
+            padding: 18px;
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            color: #111a29;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 5px 20px rgba(255, 215, 0, 0.3);
+        }
+        
+        .calculate-btn:hover:not(:disabled) {
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 8px 25px rgba(255, 215, 0, 0.5);
+        }
+
+        .calculate-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .calculate-btn:active {
+            transform: translateY(0);
+        }
+        
+        .results {
+            background: rgba(255, 255, 255, 0.03);
+            border: 2px solid rgba(255, 215, 0, 0.15);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(15px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .results::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #FFD700, transparent);
+            animation: shimmer 3s ease-in-out infinite alternate;
+        }
+        
+        .info-text {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.6);
+            margin-top: 5px;
+            font-style: italic;
+        }
+
+        .week-selector {
+            margin-bottom: 20px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #FFD700, #FFA500);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #FFD700;
+            padding: 20px;
+            font-weight: 600;
+        }
+        
+        .error {
+            text-align: center;
+            color: #ef4444;
+            padding: 20px;
+            font-weight: 600;
+        }
+        
+        .success {
+            text-align: center;
+            color: #22c55e;
+            padding: 20px;
+            font-weight: 600;
+        }
+
+        .csv-upload-info {
+            background: rgba(59, 130, 246, 0.1);
+            border: 2px solid rgba(59, 130, 246, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .csv-upload-info h4 {
+            color: #3b82f6;
+            margin-bottom: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .csv-stats {
+            background: rgba(255, 215, 0, 0.1);
+            border: 2px solid rgba(255, 215, 0, 0.3);
+            border-radius: 12px;
+            padding: 15px;
+            margin: 15px 0;
+            text-align: center;
+        }
+
+        .csv-stats h4 {
+            color: #FFD700;
+            margin-bottom: 5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .csv-stats p {
+            color: rgba(255, 255, 255, 0.8);
+            font-weight: 500;
+        }
+
+        .download-btn {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            margin: 10px 5px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            font-size: 16px;
+            box-shadow: 0 5px 20px rgba(34, 197, 94, 0.3);
+        }
+
+        .download-btn:hover {
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 8px 25px rgba(34, 197, 94, 0.5);
+        }
+
+        .week-progress {
+            display: none;
+            text-align: center;
+            color: #FFD700;
+            font-weight: 600;
+            margin: 20px 0;
+        }
+
+        .week-results-summary {
+            background: rgba(34, 197, 94, 0.1);
+            border: 2px solid rgba(34, 197, 94, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .week-results-summary h4 {
+            color: #22c55e;
+            margin-bottom: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .recommendations-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 15px 0;
+        }
+
+        .recommendation-stat {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            border: 1px solid rgba(255, 215, 0, 0.2);
+        }
+
+        .recommendation-stat .count {
+            font-size: 24px;
+            font-weight: 700;
+            color: #FFD700;
+            display: block;
+        }
+
+        .recommendation-stat .label {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 5px;
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            
+            h1 {
+                font-size: 2.5rem;
+            }
+
+            .password-container {
+                padding: 30px 20px;
+            }
+
+            .password-title {
+                font-size: 24px;
+            }
+            
+            .input-card, .results {
+                padding: 20px;
+            }
+
+            .recommendations-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="password-overlay" id="passwordOverlay">
+        <div class="password-container">
+            <h2 class="password-title">Clear Edge</h2>
+            <p class="password-subtitle">NFL Receiving Yards Model</p>
+            <input type="password" class="password-input" id="passwordInput" placeholder="Enter Password" autocomplete="off">
+            <button class="password-submit" id="passwordSubmit">ACCESS MODEL</button>
+            <div class="password-error" id="passwordError">Incorrect password. Please try again.</div>
+        </div>
+    </div>
+
+    <div class="main-content" id="mainContent">
+        <div class="container">
+            <h1>NFL Receiving Yards Model</h1>
+            <p class="model-subtitle">Weekly Batch Processing - Weeks 5-17</p>
+            
+            <div class="input-card">
+                <div class="csv-upload-info">
+                    <h4>Upload ESPN BET Receiving Yards Data</h4>
+                    <p>Upload your CSV file containing ESPN BET receiving yards betting lines for NFL weeks 5-17. The model will analyze each week individually and provide projections with betting recommendations.</p>
+                    <p><strong>Expected format:</strong> week, player_name, home_team, away_team, bet_type, line, odds</p>
+                </div>
+                
+                <div class="input-group">
+                    <label for="csvFile">Select CSV File</label>
+                    <input type="file" id="csvFile" accept=".csv" onchange="handleCSVUpload(event)">
+                    <div class="info-text">Upload your NFL weeks 5-17 receiving yards betting data</div>
+                </div>
+                
+                <div id="csvStats" class="csv-stats" style="display: none;">
+                    <h4>Data Loaded Successfully</h4>
+                    <p id="csvStatsText">-</p>
+                </div>
+                
+                <div class="input-group week-selector" id="weekSelectorContainer" style="display: none;">
+                    <label for="weekSelect">Select Week to Process</label>
+                    <select id="weekSelect">
+                        <option value="">Choose a week...</option>
+                    </select>
+                    <div class="info-text">Process one week at a time for optimal performance</div>
+                </div>
+                
+                <button class="calculate-btn" id="processWeekBtn" disabled>Process Selected Week</button>
+            </div>
+
+            <div id="weekProgress" class="week-progress">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div id="progressText">Initializing...</div>
+            </div>
+            
+            <div id="loadingDiv" class="loading" style="display: none;">
+                Processing week data...
+            </div>
+            
+            <div id="errorDiv" class="error" style="display: none;"></div>
+            
+            <div id="successDiv" class="success" style="display: none;"></div>
+
+            <div id="weekResults" class="results" style="display: none;">
+                <div class="week-results-summary">
+                    <h4 id="weekResultTitle">Week Results</h4>
+                    <p id="weekResultSummary">-</p>
+                    
+                    <div class="recommendations-grid" id="recommendationsGrid">
+                        <div class="recommendation-stat">
+                            <span class="count" id="greatOverCount">0</span>
+                            <span class="label">Great Over</span>
+                        </div>
+                        <div class="recommendation-stat">
+                            <span class="count" id="moderateOverCount">0</span>
+                            <span class="label">Moderate Over</span>
+                        </div>
+                        <div class="recommendation-stat">
+                            <span class="count" id="passCount">0</span>
+                            <span class="label">Pass</span>
+                        </div>
+                        <div class="recommendation-stat">
+                            <span class="count" id="moderateUnderCount">0</span>
+                            <span class="label">Moderate Under</span>
+                        </div>
+                        <div class="recommendation-stat">
+                            <span class="count" id="greatUnderCount">0</span>
+                            <span class="label">Great Under</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="text-align: center; margin-top: 20px;">
+                    <button class="download-btn" id="downloadBtn" onclick="downloadResults()">
+                        📊 Download Week Results CSV
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
+
+    <script>
+        // Initialize Supabase
+        let supabaseClient = null;
+        const SUPABASE_URL = 'https://pyjtwdgapmbdgtpflzan.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5anR3ZGdhcG1iZGd0cGZsemFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTExNTEzNTgsImV4cCI6MjA2NjcyNzM1OH0._Bt_XomEPAYRqC6zNgkNDwq66XFlpMoPbNMB6Eb4USo';
+        const SEASON = 2024;
+
+        // Global variables
+        let csvData = null;
+        let weekResults = [];
+        let currentWeek = null;
+
+        window.addEventListener('load', function() {
+            if (typeof window.supabase !== 'undefined') {
+                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            } else if (typeof Supabase !== 'undefined') {
+                supabaseClient = Supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            }
+            
+            setupPasswordHandling();
+            document.getElementById('processWeekBtn').addEventListener('click', processSelectedWeek);
+        });
+
+        // Security Enhancements
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.keyCode === 123) e.preventDefault();
+            if (e.ctrlKey && e.shiftKey && e.keyCode === 73) e.preventDefault();
+            if (e.ctrlKey && e.shiftKey && e.keyCode === 74) e.preventDefault();
+            if (e.ctrlKey && e.keyCode === 85) e.preventDefault();
+        });
+
+        function setupPasswordHandling() {
+            const passwordOverlay = document.getElementById('passwordOverlay');
+            const mainContent = document.getElementById('mainContent');
+            const passwordInput = document.getElementById('passwordInput');
+            const passwordSubmitBtn = document.getElementById('passwordSubmit');
+            const passwordError = document.getElementById('passwordError');
+
+            function checkPassword() {
+                const correctPassword = 'EdgingClearly';
+                if (passwordInput.value === correctPassword) {
+                    passwordOverlay.style.display = 'none';
+                    mainContent.style.display = 'block';
+                } else {
+                    passwordError.style.display = 'block';
+                    passwordInput.value = '';
+                    setTimeout(() => {
+                        passwordError.style.display = 'none';
+                    }, 3000);
+                }
+            }
+
+            passwordSubmitBtn.addEventListener('click', checkPassword);
+            passwordInput.addEventListener('keypress', function(event) {
+                if (event.key === 'Enter') {
+                    checkPassword();
+                }
+            });
+
+            passwordInput.focus();
+        }
+
+        function handleCSVUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const csvText = e.target.result;
+                    const lines = csvText.split('\n');
+                    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+                    
+                    csvData = [];
+                    for (let i = 1; i < lines.length; i++) {
+                        if (lines[i].trim()) {
+                            const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+                            const row = {};
+                            headers.forEach((header, index) => {
+                                row[header] = values[index];
+                            });
+                            csvData.push(row);
+                        }
+                    }
+
+                    // Get unique weeks
+                    const weeks = [...new Set(csvData.map(row => parseInt(row.week)))].sort((a, b) => a - b);
+                    
+                    // Filter for only "Over" bets to get unique player count
+                    const overBets = csvData.filter(row => row.bet_type === 'Over');
+                    const uniquePlayers = [...new Set(overBets.map(row => row.player_name))].length;
+                    
+                    // Update stats display
+                    document.getElementById('csvStatsText').textContent = 
+                        `${overBets.length} betting lines found across ${weeks.length} weeks (${uniquePlayers} unique players)`;
+                    document.getElementById('csvStats').style.display = 'block';
+                    
+                    // Populate week selector
+                    const weekSelect = document.getElementById('weekSelect');
+                    weekSelect.innerHTML = '<option value="">Choose a week...</option>';
+                    weeks.forEach(week => {
+                        const weekCount = overBets.filter(row => parseInt(row.week) === week).length;
+                        const option = document.createElement('option');
+                        option.value = week;
+                        option.textContent = `Week ${week} (${weekCount} players)`;
+                        weekSelect.appendChild(option);
+                    });
+
+                    document.getElementById('weekSelectorContainer').style.display = 'block';
+                    
+                    weekSelect.addEventListener('change', function() {
+                        const processBtn = document.getElementById('processWeekBtn');
+                        processBtn.disabled = !this.value;
+                    });
+
+                    showSuccess(`CSV loaded successfully! Ready to process weeks 5-17.`);
+
+                } catch (error) {
+                    showError('Error parsing CSV file. Please check the format.');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function normalizeTeamName(input) {
+            const teamMapping = {
+                'ARI': 'Arizona Cardinals', 'ATL': 'Atlanta Falcons', 'BAL': 'Baltimore Ravens',
+                'BUF': 'Buffalo Bills', 'CAR': 'Carolina Panthers', 'CHI': 'Chicago Bears',
+                'CIN': 'Cincinnati Bengals', 'CLE': 'Cleveland Browns', 'DAL': 'Dallas Cowboys',
+                'DEN': 'Denver Broncos', 'DET': 'Detroit Lions', 'GB': 'Green Bay Packers',
+                'HOU': 'Houston Texans', 'IND': 'Indianapolis Colts', 'JAX': 'Jacksonville Jaguars',
+                'KC': 'Kansas City Chiefs', 'LV': 'Las Vegas Raiders', 'LAC': 'Los Angeles Chargers',
+                'LAR': 'Los Angeles Rams', 'MIA': 'Miami Dolphins', 'MIN': 'Minnesota Vikings',
+                'NE': 'New England Patriots', 'NO': 'New Orleans Saints', 'NYG': 'New York Giants',
+                'NYJ': 'New York Jets', 'PHI': 'Philadelphia Eagles', 'PIT': 'Pittsburgh Steelers',
+                'SF': 'San Francisco 49ers', 'SEA': 'Seattle Seahawks', 'TB': 'Tampa Bay Buccaneers',
+                'TEN': 'Tennessee Titans', 'WAS': 'Washington Commanders'
+            };
+            
+            const upperInput = input.trim().toUpperCase();
+            if (teamMapping[upperInput]) {
+                return teamMapping[upperInput];
+            }
+            
+            for (const fullName of Object.values(teamMapping)) {
+                if (input.trim().toLowerCase() === fullName.toLowerCase()) {
+                    return fullName;
+                }
+            }
+            
+            return input.trim();
+        }
+
+        function getOpponentTeam(playerTeam, homeTeam, awayTeam) {
+            if (playerTeam === homeTeam) {
+                return awayTeam;
+            } else if (playerTeam === awayTeam) {
+                return homeTeam;
+            } else {
+                if (homeTeam.includes(playerTeam) || playerTeam.includes(homeTeam)) {
+                    return awayTeam;
+                } else {
+                    return homeTeam;
+                }
+            }
+        }
+
+        async function processSelectedWeek() {
+            const selectedWeek = document.getElementById('weekSelect').value;
+            if (!selectedWeek || !csvData) {
+                showError('Please select a week to process.');
+                return;
+            }
+
+            currentWeek = selectedWeek;
+
+            // Filter data for selected week and only "Over" bets
+            const weekData = csvData.filter(row => 
+                parseInt(row.week) === parseInt(selectedWeek) && 
+                row.bet_type === 'Over'
+            );
+
+            if (weekData.length === 0) {
+                showError(`No "Over" betting data found for Week ${selectedWeek}.`);
+                return;
+            }
+
+            showLoading(true);
+            hideAllMessages();
+            
+            const progressContainer = document.getElementById('weekProgress');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            
+            progressContainer.style.display = 'block';
+            weekResults = [];
+
+            let processedCount = 0;
+            const totalCount = weekData.length;
+
+            for (let i = 0; i < weekData.length; i++) {
+                const row = weekData[i];
+                
+                // Update progress
+                const progressPercent = (processedCount / totalCount) * 100;
+                progressFill.style.width = `${progressPercent}%`;
+                progressText.textContent = `Processing ${processedCount + 1} of ${totalCount}: ${row.player_name}`;
+
+                try {
+                    const result = await processPlayer(row);
+                    if (result) {
+                        weekResults.push(result);
+                    }
+                } catch (error) {
+                    console.error(`Error processing ${row.player_name}:`, error);
+                    // Continue with next player
+                }
+
+                processedCount++;
+                
+                // Small delay to prevent overwhelming the database
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+
+            // Complete progress
+            progressFill.style.width = '100%';
+            progressText.textContent = `Week ${selectedWeek} processing complete!`;
+
+            showLoading(false);
+            displayWeekResults();
+        }
+
+        async function processPlayer(csvRow) {
+            const playerName = csvRow.player_name;
+            const bettingLine = parseFloat(csvRow.line);
+            const odds = parseInt(csvRow.odds);
+            const homeTeam = normalizeTeamName(csvRow.home_team);
+            const awayTeam = normalizeTeamName(csvRow.away_team);
+
+            try {
+                // Get player's team and stats
+                const { data: playerData, error: playerError } = await supabaseClient
+                    .from('player_cover_stats')
+                    .select('team, yprr_player, routes_run, g, separation_score')
+                    .eq('player_name', playerName)
+                    .eq('season', SEASON)
+                    .eq('coverage_type', 'Overall')
+                    .limit(1);
+
+                if (playerError || !playerData || playerData.length === 0) {
+                    return null;
+                }
+
+                const playerTeam = playerData[0].team;
+                const opponentTeam = getOpponentTeam(playerTeam, homeTeam, awayTeam);
+                
+                // Default game flow (neutral)
+                const gameFlow = 3;
+                
+                // Calculate routes per game
+                const routesPerGame = playerData[0].routes_run && playerData[0].g ? 
+                    (playerData[0].routes_run / playerData[0].g) : 35;
+
+                // Get weighted stats and calculate projection
+                const projection = await calculateReceivingYardsProjection(
+                    playerName, 
+                    playerTeam, 
+                    opponentTeam, 
+                    gameFlow, 
+                    routesPerGame
+                );
+
+                if (!projection) return null;
+
+                // Calculate edge and recommendation
+                const edgeDifference = projection.expectedYards - bettingLine;
+                let recommendation = 'PASS';
+                
+                if (Math.abs(edgeDifference) >= 15) {
+                    recommendation = edgeDifference > 0 ? 'GREAT OVER' : 'GREAT UNDER';
+                } else if (Math.abs(edgeDifference) >= 6) {
+                    recommendation = edgeDifference > 0 ? 'MODERATE OVER' : 'MODERATE UNDER';
+                }
+
+                return {
+                    week: csvRow.week,
+                    player_name: playerName,
+                    team: playerTeam,
+                    opponent: opponentTeam,
+                    betting_line: bettingLine,
+                    odds: odds,
+                    projection: projection.expectedYards,
+                    edge: edgeDifference.toFixed(1),
+                    recommendation: recommendation,
+                    target_share: projection.targetShare,
+                    weighted_yprr: projection.weightedYPRR,
+                    separation_score: projection.separationScore
+                };
+
+            } catch (error) {
+                console.error(`Error processing ${playerName}:`, error);
+                return null;
+            }
+        }
+
+        async function calculateReceivingYardsProjection(playerName, playerTeam, opponentTeam, gameFlow, routesPerGame) {
+            try {
+                // Get player's overall stats for target share
+                const { data: playerData, error: playerError } = await supabaseClient
+                    .from('player_cover_stats')
+                    .select('tprr_player, yprr_player, separation_score, routes_run, g')
+                    .eq('player_name', playerName)
+                    .eq('team', playerTeam)
+                    .eq('season', SEASON)
+                    .eq('coverage_type', 'Overall')
+                    .limit(1);
+
+                if (playerError || !playerData || playerData.length === 0) {
+                    throw new Error(`Player "${playerName}" not found.`);
+                }
+
+                const targetShare = (playerData[0].tprr_player * 100);
+
+                // Get opponent's coverage frequencies
+                const { data: coverageData, error: coverageError } = await supabaseClient
+                    .from('defensive_coverages')
+                    .select('*')
+                    .eq('team_name', opponentTeam)
+                    .eq('season', SEASON)
+                    .limit(1);
+
+                if (coverageError || !coverageData || coverageData.length === 0) {
+                    throw new Error(`No coverage data found for ${opponentTeam}.`);
+                }
+
+                const coverage = coverageData[0];
+                
+                const coverageTypes = [
+                    { name: 'Man Coverage', pct: coverage.man_pct },
+                    { name: 'Cover 2', pct: coverage.cover_2_pct },
+                    { name: 'Cover 3', pct: coverage.cover_3_pct },
+                    { name: 'Cover 4', pct: coverage.cover_4_pct },
+                    { name: 'Cover 6', pct: coverage.cover_6_pct }
+                ];
+
+                // Get player stats for all coverage types
+                const { data: playerStats, error: statsError } = await supabaseClient
+                    .from('player_cover_stats')
+                    .select('coverage_type, yprr_player, separation_score')
+                    .eq('player_name', playerName)
+                    .eq('team', playerTeam)
+                    .eq('season', SEASON)
+                    .in('coverage_type', ['Man Coverage', 'Cover 2', 'Cover 3', 'Cover 4', 'Cover 6']);
+
+                if (statsError || !playerStats || playerStats.length === 0) {
+                    throw new Error(`No detailed coverage stats found for ${playerName}.`);
+                }
+
+                // Calculate weighted YPRR and separation scores
+                let weightedYPRR = 0;
+                let weightedSeparation = 0;
+                let totalWeight = 0;
+
+                coverageTypes.forEach(coverage => {
+                    if (coverage.pct > 0) {
+                        const playerStat = playerStats.find(s => s.coverage_type === coverage.name);
+                        if (playerStat) {
+                            const weight = coverage.pct / 100;
+                            weightedYPRR += (playerStat.yprr_player) * weight;
+                            weightedSeparation += (playerStat.separation_score || 0.2) * weight;
+                            totalWeight += weight;
+                        }
+                    }
+                });
+
+                if (totalWeight === 0) {
+                    throw new Error(`No valid coverage data found for ${playerName}.`);
+                }
+
+                weightedYPRR = weightedYPRR / totalWeight;
+                weightedSeparation = weightedSeparation / totalWeight;
+
+                // Calculate receiving yards projection
+                const result = calculateReceivingYardsScore(
+                    weightedYPRR,
+                    weightedSeparation,
+                    targetShare,
+                    routesPerGame,
+                    gameFlow
+                );
+
+                return {
+                    expectedYards: result.expectedYards,
+                    targetShare: targetShare.toFixed(1),
+                    weightedYPRR: weightedYPRR.toFixed(2),
+                    separationScore: weightedSeparation.toFixed(3)
+                };
+
+            } catch (error) {
+                console.error(`Error calculating projection for ${playerName}:`, error);
+                return null;
+            }
+        }
+
+        function calculateReceivingYardsScore(weightedYPRR, weightedSeparation, targetShare, routesPerGame, gameFlow) {
+            // === RECEIVING YARDS PROJECTION MODEL ===
+            
+            // 1. Base calculation: Routes × Target Share × Yards per Route Run
+            const baseYards = routesPerGame * (targetShare / 100) * weightedYPRR;
+            
+            // 2. Separation adjustment (better separation = more YAC)
+            // Convert separation to z-score vs NFL average (0.15 mean, 0.05 std dev)
+            const separationZScore = (weightedSeparation - 0.15) / 0.05;
+            const separationMultiplier = 1.0 + (separationZScore * 0.10); // ±20% based on separation
+            
+            // 3. Game script multiplier
+            // Heavy favorites (1) = 0.90x, Heavy underdogs (5) = 1.20x  
+            const gameScriptMultiplier = 0.80 + (gameFlow * 0.10);
+            
+            // 4. Apply adjustments
+            const adjustedYards = baseYards * separationMultiplier * gameScriptMultiplier;
+            
+            // 5. Add some variance based on target volume (high-volume players more consistent)
+            const volumeStability = Math.min(1.0, (targetShare / 100) * 4); // Players with 25%+ target share get full stability
+            const varianceReduction = 0.85 + (volumeStability * 0.15); // 85-100% of projection
+            
+            const expectedYards = Math.max(0, adjustedYards * varianceReduction);
+            
+            return {
+                expectedYards: parseFloat(expectedYards.toFixed(1))
+            };
+        }
+
+        function displayWeekResults() {
+            if (weekResults.length === 0) {
+                showError(`No valid projections generated for Week ${currentWeek}.`);
+                return;
+            }
+
+            // Calculate recommendation counts
+            const recCounts = {
+                'GREAT OVER': 0,
+                'MODERATE OVER': 0,
+                'PASS': 0,
+                'MODERATE UNDER': 0,
+                'GREAT UNDER': 0
+            };
+
+            weekResults.forEach(result => {
+                recCounts[result.recommendation]++;
+            });
+
+            // Update UI
+            document.getElementById('weekResultTitle').textContent = `Week ${currentWeek} Results`;
+            document.getElementById('weekResultSummary').textContent = 
+                `${weekResults.length} players processed with ${recCounts['GREAT OVER'] + recCounts['MODERATE OVER'] + recCounts['GREAT UNDER'] + recCounts['MODERATE UNDER']} actionable recommendations`;
+
+            document.getElementById('greatOverCount').textContent = recCounts['GREAT OVER'];
+            document.getElementById('moderateOverCount').textContent = recCounts['MODERATE OVER'];
+            document.getElementById('passCount').textContent = recCounts['PASS'];
+            document.getElementById('moderateUnderCount').textContent = recCounts['MODERATE UNDER'];
+            document.getElementById('greatUnderCount').textContent = recCounts['GREAT UNDER'];
+
+            // Hide progress and show results
+            document.getElementById('weekProgress').style.display = 'none';
+            document.getElementById('weekResults').style.display = 'block';
+
+            showSuccess(`Week ${currentWeek} processing complete! ${weekResults.length} projections generated.`);
+        }
+
+        function downloadResults() {
+            if (weekResults.length === 0) {
+                showError('No results to download.');
+                return;
+            }
+
+            // Create CSV content
+            const headers = [
+                'Week', 'Player Name', 'Team', 'Opponent', 'Betting Line', 'Odds', 
+                'Projection', 'Edge', 'Recommendation', 'Target Share %', 
+                'Weighted YPRR', 'Separation Score'
+            ];
+            
+            let csvContent = headers.join(',') + '\n';
+            
+            weekResults.forEach(result => {
+                const row = [
+                    result.week,
+                    `"${result.player_name}"`,
+                    `"${result.team}"`,
+                    `"${result.opponent}"`,
+                    result.betting_line,
+                    result.odds,
+                    result.projection,
+                    result.edge,
+                    `"${result.recommendation}"`,
+                    result.target_share,
+                    result.weighted_yprr,
+                    result.separation_score
+                ];
+                csvContent += row.join(',') + '\n';
+            });
+
+            // Create and download file
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `nfl_receiving_yards_week_${currentWeek}_results.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
+
+        function showLoading(isLoading) {
+            document.getElementById('loadingDiv').style.display = isLoading ? 'block' : 'none';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorDiv');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successDiv');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+        }
+
+        function hideAllMessages() {
+            document.getElementById('errorDiv').style.display = 'none';
+            document.getElementById('successDiv').style.display = 'none';
+            document.getElementById('weekResults').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
