@@ -128,15 +128,15 @@
                     <select id="weekSelect"><option value="">Choose a week...</option></select>
                 </div>
                 <button class="calculate-btn" id="processWeekBtn" disabled>Process Selected Week</button>
-                <div id="debugConsole" class="debug" style="display: none;"></div>
+                <div id="debugConsole" class="debug" style="display: none;"><strong>Debug Console:</strong><br><div id="debugOutput"></div></div>
             </div>
 
-            <div id="weekProgress" class="week-progress" style="display: none;"></div>
+            <div id="weekProgressContainer" style="display: none;"></div>
             <div id="loadingDiv" class="loading" style="display: none;"></div>
             <div id="errorDiv" class="error" style="display: none;"></div>
             <div id="successDiv" class="success" style="display: none;"></div>
 
-            <div id="weekResults" class="results" style="display: none;">
+            <div id="resultsContainer" class="results" style="display: none;">
                 <div class="week-results-summary">
                     <h4 id="weekResultTitle"></h4>
                     <p id="weekResultSummary"></p>
@@ -172,13 +172,11 @@
             processWeekBtn: document.getElementById('processWeekBtn'),
             debugConsole: document.getElementById('debugConsole'),
             debugOutput: document.getElementById('debugOutput'),
-            weekProgress: document.getElementById('weekProgress'),
-            progressFill: document.createElement('div'), // Created dynamically
-            progressText: document.createElement('div'), // Created dynamically
+            weekProgressContainer: document.getElementById('weekProgressContainer'),
             loadingDiv: document.getElementById('loadingDiv'),
             errorDiv: document.getElementById('errorDiv'),
             successDiv: document.getElementById('successDiv'),
-            weekResults: document.getElementById('weekResults'),
+            resultsContainer: document.getElementById('resultsContainer'),
             weekResultTitle: document.getElementById('weekResultTitle'),
             weekResultSummary: document.getElementById('weekResultSummary'),
             recommendationsGrid: document.getElementById('recommendationsGrid'),
@@ -235,7 +233,7 @@
                     const headers = lines.shift().trim().split(',').map(h => h.trim().replace(/"/g, ''));
                     const requiredHeaders = ['week', 'player_name', 'home_team', 'away_team', 'bet_type', 'line', 'odds'];
                     if (!requiredHeaders.every(h => headers.includes(h))) {
-                        throw new Error(`CSV is missing one or more required headers: ${requiredHeaders.join(', ')}`);
+                        throw new Error(`CSV is missing required headers: ${requiredHeaders.join(', ')}`);
                     }
                     csvData = lines.map(line => {
                         if (!line.trim()) return null;
@@ -262,18 +260,24 @@
                 try {
                     gamelogData.clear();
                     const lines = e.target.result.split('\n');
+                    const headers = lines.shift().trim().split(',').map(h => h.trim().replace(/"/g, ''));
+                    if(!headers.includes('player_name') || !headers.includes('yards')) {
+                         throw new Error(`Gamelog CSV must have 'player_name' and 'yards' columns.`);
+                    }
+
                     lines.forEach(line => {
                         if (line.trim()) {
-                            const parts = line.split(',');
-                            if (parts.length < 2) return;
-                            const playerName = parts[0].trim().replace(/"/g, '');
-                            const yards = parseFloat(parts[1]);
+                            const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+                            const row = {};
+                            headers.forEach((header, index) => { row[header] = values[index]; });
+                            const playerName = row.player_name;
+                            const yards = parseFloat(row.yards);
                             if (playerName && !isNaN(yards)) gamelogData.set(playerName, yards);
                         }
                     });
                     debugLog(`Parsed ${gamelogData.size} entries from gamelog.`);
                     mergeGamelogData();
-                    renderDetailedResultsTable(weekResults);
+                    renderDetailedResultsTable();
                     showSuccess('Gamelog loaded. Audit results are updated.');
                 } catch (error) {
                     showError('Error parsing gamelog file: ' + error.message);
@@ -287,7 +291,7 @@
             if (!currentWeek) { showError('Please select a week.'); return; }
             
             debugLog(`Starting processing for Week ${currentWeek}`);
-            resetForNewWeek();
+            resetUIForNewWeek();
             
             const weekData = csvData.filter(r => r.week == currentWeek && r.bet_type === 'Over');
             if (weekData.length === 0) { showError(`No "Over" betting data found for Week ${currentWeek}.`); return; }
@@ -295,10 +299,13 @@
             showLoading(true, `Processing ${weekData.length} players...`);
             updateProgress(0, weekData.length, 'Initializing...');
             
-            const allPromises = weekData.map(row => processPlayer(row));
+            const allPromises = weekData.map((row, index) => 
+                processPlayer(row).finally(() => updateProgress(index + 1, weekData.length, row.player_name))
+            );
+
             const results = await Promise.all(allPromises);
             
-            weekResults = results.filter(Boolean); // Filter out nulls from failed players
+            weekResults = results.filter(Boolean);
             const errorCount = weekData.length - weekResults.length;
 
             showLoading(false);
@@ -313,6 +320,7 @@
         
         async function processPlayer(row) {
             const { player_name, line, odds, home_team, away_team } = row;
+            const opponent = getOpponentTeam(home_team, away_team); // Simplified opponent detection
             try {
                 const { data: pData, error: pErr } = await supabaseClient.from('player_cover_stats').select('team, tprr_player, routes_run, g, separation_score').eq('player_name', player_name).eq('season', SEASON).eq('coverage_type', 'Overall').single();
                 if (pErr) throw new Error(`Player data not found.`);
@@ -321,11 +329,11 @@
                 if (yErr) throw new Error(`YPT data not found.`);
 
                 const routesPerGame = pData.routes_run && pData.g ? (pData.routes_run / pData.g) : 35;
-                const projection = await calculateProjection(player_name, pData.team, getOpponentTeam(pData.team, home_team, away_team), routesPerGame, yptData.yards_per_target);
+                const projection = await calculateProjection(player_name, pData.team, opponent, routesPerGame, yptData.yards_per_target);
                 
                 const edge = projection.expectedYards - parseFloat(line);
                 return {
-                    week: currentWeek, player_name, team: pData.team, opponent: getOpponentTeam(pData.team, home_team, away_team), 
+                    week: currentWeek, player_name, team: pData.team, opponent, 
                     betting_line: parseFloat(line), odds: parseInt(odds), projection: projection.expectedYards, 
                     edge: edge.toFixed(1), recommendation: getRecommendation(edge), ...projection.debugStats
                 };
@@ -400,7 +408,7 @@
                 DOM.weekSelect.onchange = () => { DOM.processWeekBtn.disabled = !DOM.weekSelect.value; };
             } catch (error) {
                 handleFatalError(error.message);
-                csvData = null; // Invalidate data
+                csvData = null;
             }
         }
 
@@ -417,21 +425,23 @@
                 <div class="recommendation-stat"><span class="count">${counts['MODERATE UNDER'] || 0}</span><span class="label">Moderate Under</span></div>
                 <div class="recommendation-stat"><span class="count">${counts['GREAT UNDER'] || 0}</span><span class="label">Great Under</span></div>`;
             
-            renderDetailedResultsTable(weekResults);
-            DOM.weekResults.style.display = 'block';
+            renderDetailedResultsTable();
+            DOM.resultsContainer.style.display = 'block';
             showSuccess(`Week ${currentWeek} processing complete! Ready for audit.`);
         }
         
-        function renderDetailedResultsTable(data) {
+        function renderDetailedResultsTable() {
             DOM.detailedResultsContainer.innerHTML = '';
+            if (weekResults.length === 0) return;
+            
             const table = document.createElement('table');
             table.className = 'results-table';
-            const hasActuals = data[0]?.hasOwnProperty('actual_yards');
+            const hasActuals = weekResults[0]?.hasOwnProperty('actual_yards');
             const headers = ['Player', 'Team', 'Opp', 'Line', 'Proj.', 'Edge', 'Rec.'];
             if (hasActuals) headers.push('Actual', 'Outcome');
             table.createTHead().insertRow().innerHTML = headers.map(h => `<th>${h}</th>`).join('');
             const tbody = table.createTBody();
-            data.forEach(r => {
+            weekResults.forEach(r => {
                 const row = tbody.insertRow();
                 let cells = `<td>${r.player_name}</td><td>${r.team}</td><td>${r.opponent}</td><td>${r.betting_line.toFixed(1)}</td><td>${r.projection.toFixed(1)}</td><td>${r.edge}</td><td>${r.recommendation}</td>`;
                 if (hasActuals) {
@@ -448,8 +458,9 @@
             return 'PASS';
         }
         
-        function getOpponentTeam(pTeam, hTeam, aTeam) { return normalizeTeamName(pTeam) === normalizeTeamName(hTeam) ? aTeam : hTeam; }
-        function normalizeTeamName(name) { return name.trim(); }
+        function getOpponentTeam(hTeam, aTeam) {
+            return hTeam.includes("LA") ? aTeam : hTeam;
+        }
 
         function downloadResults() {
             if (!weekResults.length) { showError('No results to download.'); return; }
@@ -471,7 +482,7 @@
             document.body.removeChild(a);
         }
 
-        function resetForNewWeek() {
+        function resetUIForNewWeek() {
             weekResults = []; gamelogData.clear();
             hideAllMessages();
             DOM.detailedResultsContainer.innerHTML = '';
@@ -485,18 +496,16 @@
         }
 
         function updateProgress(current, total, text) {
-            DOM.weekProgress.style.display = 'block';
-            if (!DOM.weekProgress.innerHTML) {
-                const bar = document.createElement('div'); bar.className = 'progress-bar';
-                DOM.progressFill.className = 'progress-fill';
-                bar.appendChild(DOM.progressFill);
-                DOM.weekProgress.append(bar, DOM.progressText);
+            const container = DOM.weekProgressContainer;
+            container.style.display = 'block';
+            if (!container.innerHTML) {
+                container.innerHTML = `<div class="week-progress"><div class="progress-bar"><div class="progress-fill"></div></div><div class="progress-text"></div></div>`;
             }
-            DOM.progressFill.style.width = total > 0 ? `${(current / total) * 100}%` : '0%';
-            DOM.progressText.textContent = text;
+            container.querySelector('.progress-fill').style.width = total > 0 ? `${(current / total) * 100}%` : '0%';
+            container.querySelector('.progress-text').textContent = text;
         }
         
-        function hideAllMessages() { [DOM.errorDiv, DOM.successDiv, DOM.loadingDiv, DOM.weekResults, DOM.weekProgress].forEach(el => el.style.display = 'none'); }
+        function hideAllMessages() { [DOM.errorDiv, DOM.successDiv, DOM.loadingDiv, DOM.resultsContainer, DOM.weekProgressContainer].forEach(el => el.style.display = 'none'); }
         function showError(message) { DOM.errorDiv.textContent = message; DOM.errorDiv.style.display = 'block'; }
         function showSuccess(message) { DOM.successDiv.textContent = message; DOM.successDiv.style.display = 'block'; }
         function enableDebugMode() { DOM.debugConsole.style.display = 'block'; debugLog('Debug mode enabled.'); }
