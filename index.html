@@ -225,8 +225,6 @@
             });
         }
         
-        // --- CSV Parsing ---
-
         function parseGenericCSV(csvText, requiredHeaders) {
             const lines = csvText.split('\n').filter(line => line.trim() !== '');
             if (lines.length < 2) throw new Error('CSV file is empty or has no data rows.');
@@ -244,12 +242,10 @@
             });
         }
 
-        // Specialized parser for the detailed gamelog format
         function parseGamelogCSV(csvText) {
             const lines = csvText.split('\n').filter(line => line.trim() !== '');
             if (lines.length < 3) throw new Error('Gamelog CSV appears to be empty or malformed.');
 
-            // Find the actual header row, which should contain "Rank", "Name", "Team", etc.
             let headerRowIndex = lines.findIndex(line => line.includes('"Rank"') && line.includes('"Name"'));
             if (headerRowIndex === -1) throw new Error('Could not find the header row in the gamelog file. Expected a row with "Rank", "Name", etc.');
             
@@ -274,9 +270,6 @@
             return gamelogMap;
         }
 
-
-        // --- File Handlers ---
-        
         function handleCSVUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -320,8 +313,28 @@
                 updateUI_AfterCSVLoad();
             }
         }
+        
+        /**
+         * Determines the bet outcome based on the model's recommendation.
+         * @param {string} recommendation - The model's recommendation (e.g., 'GREAT OVER', 'MODERATE UNDER').
+         * @param {number} actualYards - The player's actual yards.
+         * @param {number} bettingLine - The betting line for the player.
+         * @returns {string} 'WIN', 'LOSS', 'PUSH', or 'N/A'.
+         */
+        function determineBetOutcome(recommendation, actualYards, bettingLine) {
+            if (recommendation.includes('OVER')) {
+                if (actualYards > bettingLine) return 'WIN';
+                if (actualYards < bettingLine) return 'LOSS';
+                return 'PUSH';
+            } else if (recommendation.includes('UNDER')) {
+                if (actualYards < bettingLine) return 'WIN';
+                if (actualYards > bettingLine) return 'LOSS';
+                return 'PUSH';
+            } else { // This handles 'PASS'
+                return 'N/A';
+            }
+        }
 
-        // --- Core Application Logic ---
 
         async function processSelectedWeek() {
             currentWeek = DOM.weekSelect.value;
@@ -370,19 +383,18 @@
                 const projection = await calculateProjection(player_name, pData.team, opponentTeam, routesPerGame, yptData.yards_per_target);
                 
                 const edge = projection.expectedYards - parseFloat(line);
+                const recommendation = getRecommendation(edge);
                 
                 const result = {
                     week: currentWeek, player_name, team: pData.team, opponent: opponentTeam, 
                     betting_line: parseFloat(line), odds: parseInt(odds), projection: projection.expectedYards, 
-                    edge: edge.toFixed(1), recommendation: getRecommendation(edge), ...projection.debugStats
+                    edge: edge.toFixed(1), recommendation: recommendation, ...projection.debugStats
                 };
                 
                 const actualYards = gamelogData.get(player_name);
                 if (actualYards !== undefined) {
                     result.actual_yards = actualYards;
-                    if (actualYards > result.betting_line) result.bet_outcome = 'WIN';
-                    else if (actualYards < result.betting_line) result.bet_outcome = 'LOSS';
-                    else result.bet_outcome = 'PUSH';
+                    result.bet_outcome = determineBetOutcome(recommendation, actualYards, result.betting_line);
                 }
 
                 return result;
@@ -427,8 +439,6 @@
                 debugStats: { target_share: (statsMap.get('Overall')?.tprr_player * 100 || 0).toFixed(1), weighted_tprr: weightedTPRR.toFixed(4), base_ypt: baseYPT, separation_score: weightedSep.toFixed(3) }
             };
         }
-        
-        // --- UI and Display Functions ---
         
         function updateUI_AfterCSVLoad() {
             try {
@@ -489,8 +499,6 @@
             });
             DOM.detailedResultsContainer.appendChild(table);
         }
-
-        // --- Utility Functions ---
 
         function getRecommendation(edge) {
             if (edge >= 15) return 'GREAT OVER'; if (edge >= 6) return 'MODERATE OVER';
