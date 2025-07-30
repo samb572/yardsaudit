@@ -126,7 +126,7 @@
 
                 <div class="csv-upload-info" style="margin-top: 40px;">
                     <h4>2. Upload Gamelog CSV</h4>
-                    <p><strong>Required Columns:</strong> player_name, yards</p>
+                    <p>This should be the detailed player stats export. The tool will find the "Name" and "YDS" columns automatically.</p>
                 </div>
                 <div class="input-group">
                     <label for="gamelogCsvFile">Select Gamelog CSV File</label>
@@ -224,9 +224,12 @@
                 if (e.ctrlKey && e.shiftKey && e.keyCode === 68) enableDebugMode();
             });
         }
+        
+        // --- CSV Parsing ---
 
-        function parseCSV(csvText, requiredHeaders) {
+        function parseGenericCSV(csvText, requiredHeaders) {
             const lines = csvText.split('\n').filter(line => line.trim() !== '');
+            if (lines.length < 2) throw new Error('CSV file is empty or has no data rows.');
             const headers = lines.shift().trim().split(',').map(h => h.trim().replace(/"/g, ''));
             
             if (!requiredHeaders.every(h => headers.includes(h))) {
@@ -241,6 +244,39 @@
             });
         }
 
+        // Specialized parser for the detailed gamelog format
+        function parseGamelogCSV(csvText) {
+            const lines = csvText.split('\n').filter(line => line.trim() !== '');
+            if (lines.length < 3) throw new Error('Gamelog CSV appears to be empty or malformed.');
+
+            // Find the actual header row, which should contain "Rank", "Name", "Team", etc.
+            let headerRowIndex = lines.findIndex(line => line.includes('"Rank"') && line.includes('"Name"'));
+            if (headerRowIndex === -1) throw new Error('Could not find the header row in the gamelog file. Expected a row with "Rank", "Name", etc.');
+            
+            const headers = lines[headerRowIndex].trim().split(',').map(h => h.trim().replace(/"/g, ''));
+            const nameIndex = headers.indexOf('Name');
+            const yardsIndex = headers.indexOf('YDS');
+
+            if (nameIndex === -1 || yardsIndex === -1) {
+                throw new Error('Gamelog CSV must have "Name" and "YDS" columns.');
+            }
+
+            const dataRows = lines.slice(headerRowIndex + 1);
+            const gamelogMap = new Map();
+            dataRows.forEach(line => {
+                const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+                const playerName = values[nameIndex];
+                const yards = parseFloat(values[yardsIndex]);
+                if (playerName && !isNaN(yards)) {
+                    gamelogMap.set(playerName, yards);
+                }
+            });
+            return gamelogMap;
+        }
+
+
+        // --- File Handlers ---
+        
         function handleCSVUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -248,7 +284,7 @@
             reader.onload = e => {
                 try {
                     const required = ['week', 'player_name', 'home_team', 'away_team', 'bet_type', 'line', 'odds'];
-                    csvData = parseCSV(e.target.result, required);
+                    csvData = parseGenericCSV(e.target.result, required);
                     updateFileStatus(DOM.csvFileStatus, `${csvData.length} rows loaded.`);
                     checkPrerequisites();
                 } catch (error) {
@@ -266,14 +302,7 @@
             const reader = new FileReader();
             reader.onload = e => {
                 try {
-                    gamelogData.clear();
-                    const required = ['player_name', 'yards'];
-                    const parsedGamelog = parseCSV(e.target.result, required);
-                    parsedGamelog.forEach(row => {
-                        const playerName = row.player_name;
-                        const yards = parseFloat(row.yards);
-                        if (playerName && !isNaN(yards)) gamelogData.set(playerName, yards);
-                    });
+                    gamelogData = parseGamelogCSV(e.target.result);
                     updateFileStatus(DOM.gamelogFileStatus, `${gamelogData.size} entries loaded.`);
                     checkPrerequisites();
                 } catch (error) {
@@ -291,6 +320,8 @@
                 updateUI_AfterCSVLoad();
             }
         }
+
+        // --- Core Application Logic ---
 
         async function processSelectedWeek() {
             currentWeek = DOM.weekSelect.value;
@@ -346,7 +377,6 @@
                     edge: edge.toFixed(1), recommendation: getRecommendation(edge), ...projection.debugStats
                 };
                 
-                // Merge gamelog data right here
                 const actualYards = gamelogData.get(player_name);
                 if (actualYards !== undefined) {
                     result.actual_yards = actualYards;
@@ -397,6 +427,8 @@
                 debugStats: { target_share: (statsMap.get('Overall')?.tprr_player * 100 || 0).toFixed(1), weighted_tprr: weightedTPRR.toFixed(4), base_ypt: baseYPT, separation_score: weightedSep.toFixed(3) }
             };
         }
+        
+        // --- UI and Display Functions ---
         
         function updateUI_AfterCSVLoad() {
             try {
@@ -458,6 +490,8 @@
             DOM.detailedResultsContainer.appendChild(table);
         }
 
+        // --- Utility Functions ---
+
         function getRecommendation(edge) {
             if (edge >= 15) return 'GREAT OVER'; if (edge >= 6) return 'MODERATE OVER';
             if (edge <= -15) return 'GREAT UNDER'; if (edge <= -6) return 'MODERATE UNDER';
@@ -465,7 +499,7 @@
         }
         
         function getOpponentTeam(playerTeam, homeTeam, awayTeam) {
-            return playerTeam.trim().toLowerCase() === homeTeam.trim().toLowerCase() ? awayTeam : homeTeam;
+            return playerTeam.trim().toLowerCase() === homeTeam.trim().toLowerCase() ? awayTeam.trim() : homeTeam.trim();
         }
 
         function downloadResults() {
@@ -512,7 +546,7 @@
                 container.innerHTML = `<div class="week-progress"><div class="progress-bar"><div class="progress-fill"></div></div><div class="progress-text"></div></div>`;
             }
             container.querySelector('.progress-fill').style.width = total > 0 ? `${(current / total) * 100}%` : '0%';
-            container.querySelector('.progress-text').textContent = text;
+            container.querySelector('.progress-text').textContent = `Processing ${current} / ${total}: ${text}`;
         }
         
         function updateFileStatus(element, text, isSuccess = true) {
