@@ -967,11 +967,11 @@
                     throw new Error('Supabase client not initialized');
                 }
 
-                // Get player's team and stats
+                // Get player's team and stats from player_cover_stats
                 debugLog(`Querying player data for: ${playerName}`);
                 const { data: playerData, error: playerError } = await supabaseClient
                     .from('player_cover_stats')
-                    .select('team, tprr_player, ypt_player, routes_run, g, separation_score')
+                    .select('team, tprr_player, routes_run, g, separation_score')
                     .eq('player_name', playerName)
                     .eq('season', SEASON)
                     .eq('coverage_type', 'Overall')
@@ -988,6 +988,29 @@
                 }
 
                 const playerTeam = playerData[0].team;
+                
+                // Get yards_per_target from nfl_wr_general_stats
+                debugLog(`Querying yards per target for: ${playerName}`);
+                const { data: yptData, error: yptError } = await supabaseClient
+                    .from('nfl_wr_general_stats')
+                    .select('yards_per_target')
+                    .eq('player_name', playerName)
+                    .eq('season', SEASON)
+                    .limit(1);
+
+                if (yptError) {
+                    debugLog(`YPT Database error for ${playerName}: ${yptError.message}`);
+                    throw new Error(`YPT Database error: ${yptError.message}`);
+                }
+
+                if (!yptData || yptData.length === 0) {
+                    debugLog(`No YPT data found for: ${playerName}`);
+                    return null;
+                }
+
+                const baseYPT = yptData[0].yards_per_target;
+                debugLog(`Base YPT for ${playerName}: ${baseYPT}`);
+
                 const opponentTeam = getOpponentTeam(playerTeam, homeTeam, awayTeam);
                 
                 debugLog(`${playerName} plays for ${playerTeam} vs ${opponentTeam}`);
@@ -1007,7 +1030,8 @@
                     playerTeam, 
                     opponentTeam, 
                     gameFlow, 
-                    routesPerGame
+                    routesPerGame,
+                    baseYPT
                 );
 
                 if (!projection) {
@@ -1041,7 +1065,7 @@
                     recommendation: recommendation,
                     target_share: projection.targetShare,
                     weighted_tprr: projection.weightedTPRR,
-                    weighted_ypt: projection.weightedYPT,
+                    base_ypt: projection.baseYPT,
                     separation_score: projection.separationScore
                 };
 
@@ -1051,14 +1075,14 @@
             }
         }
 
-        async function calculateReceivingYardsProjection(playerName, playerTeam, opponentTeam, gameFlow, routesPerGame) {
+        async function calculateReceivingYardsProjection(playerName, playerTeam, opponentTeam, gameFlow, routesPerGame, baseYPT) {
             try {
-                debugLog(`Calculating projection for ${playerName}`);
+                debugLog(`Calculating projection for ${playerName} with base YPT: ${baseYPT}`);
 
-                // Get player's overall stats for target share
+                // Get player's overall stats for target share (TPRR only, no YPT needed here)
                 const { data: playerData, error: playerError } = await supabaseClient
                     .from('player_cover_stats')
-                    .select('tprr_player, ypt_player, separation_score, routes_run, g')
+                    .select('tprr_player, separation_score, routes_run, g')
                     .eq('player_name', playerName)
                     .eq('team', playerTeam)
                     .eq('season', SEASON)
@@ -1109,11 +1133,11 @@
 
                 debugLog(`Coverage breakdown for ${opponentTeam}: Man=${coverage.man_pct}%, C2=${coverage.cover_2_pct}%, C3=${coverage.cover_3_pct}%`);
 
-                // Get player stats for all coverage types
+                // Get player stats for all coverage types (TPRR only, no YPT per coverage)
                 debugLog(`Getting detailed coverage stats for ${playerName}`);
                 const { data: playerStats, error: statsError } = await supabaseClient
                     .from('player_cover_stats')
-                    .select('coverage_type, tprr_player, ypt_player, separation_score')
+                    .select('coverage_type, tprr_player, separation_score')
                     .eq('player_name', playerName)
                     .eq('team', playerTeam)
                     .eq('season', SEASON)
@@ -1131,9 +1155,8 @@
 
                 debugLog(`Found ${playerStats.length} coverage stats for ${playerName}`);
 
-                // Calculate weighted TPRR, YPT, and separation scores
+                // Calculate weighted TPRR and separation scores (YPT is constant from general stats)
                 let weightedTPRR = 0;
-                let weightedYPT = 0;
                 let weightedSeparation = 0;
                 let totalWeight = 0;
 
@@ -1143,10 +1166,9 @@
                         if (playerStat) {
                             const weight = coverage.pct / 100;
                             weightedTPRR += (playerStat.tprr_player) * weight;
-                            weightedYPT += (playerStat.ypt_player) * weight;
                             weightedSeparation += (playerStat.separation_score || 0.2) * weight;
                             totalWeight += weight;
-                            debugLog(`${coverage.name}: weight=${weight.toFixed(2)}, TPRR=${playerStat.tprr_player}, YPT=${playerStat.ypt_player}`);
+                            debugLog(`${coverage.name}: weight=${weight.toFixed(2)}, TPRR=${playerStat.tprr_player}`);
                         }
                     }
                 });
@@ -1157,15 +1179,14 @@
                 }
 
                 weightedTPRR = weightedTPRR / totalWeight;
-                weightedYPT = weightedYPT / totalWeight;
                 weightedSeparation = weightedSeparation / totalWeight;
 
-                debugLog(`Weighted stats - TPRR: ${weightedTPRR.toFixed(4)}, YPT: ${weightedYPT.toFixed(2)}, Separation: ${weightedSeparation.toFixed(3)}`);
+                debugLog(`Weighted stats - TPRR: ${weightedTPRR.toFixed(4)}, Base YPT: ${baseYPT}, Separation: ${weightedSeparation.toFixed(3)}`);
 
                 // Calculate receiving yards projection using your formula
                 const result = calculateReceivingYardsScore(
                     weightedTPRR,
-                    weightedYPT,
+                    baseYPT,
                     weightedSeparation,
                     routesPerGame,
                     gameFlow
@@ -1177,7 +1198,7 @@
                     expectedYards: result.expectedYards,
                     targetShare: targetShare.toFixed(1),
                     weightedTPRR: weightedTPRR.toFixed(4),
-                    weightedYPT: weightedYPT.toFixed(2),
+                    baseYPT: baseYPT,
                     separationScore: weightedSeparation.toFixed(3)
                 };
 
@@ -1187,8 +1208,8 @@
             }
         }
 
-        function calculateReceivingYardsScore(weightedTPRR, weightedYPT, weightedSeparation, routesPerGame, gameFlow) {
-            debugLog(`Calculating score with: TPRR=${weightedTPRR}, YPT=${weightedYPT}, Sep=${weightedSeparation}, Routes=${routesPerGame}`);
+        function calculateReceivingYardsScore(weightedTPRR, baseYPT, weightedSeparation, routesPerGame, gameFlow) {
+            debugLog(`Calculating score with: TPRR=${weightedTPRR}, Base YPT=${baseYPT}, Sep=${weightedSeparation}, Routes=${routesPerGame}`);
             
             // === YOUR EXACT FORMULA ===
             
@@ -1198,7 +1219,7 @@
             
             // Step 5: Calculate Adjusted YPT
             const separationBonus = Math.max(0, (weightedSeparation - 0.15) * 10);
-            const adjustedYPT = weightedYPT + separationBonus;
+            const adjustedYPT = baseYPT + separationBonus;
             debugLog(`Step 5 - Separation Bonus: ${separationBonus.toFixed(2)}, Adjusted YPT: ${adjustedYPT.toFixed(2)}`);
             
             // Step 6: Apply Game Script
@@ -1267,7 +1288,7 @@
             const headers = [
                 'Week', 'Player Name', 'Team', 'Opponent', 'Betting Line', 'Odds', 
                 'Projection', 'Edge', 'Recommendation', 'Target Share %', 
-                'Weighted TPRR', 'Weighted YPT', 'Separation Score'
+                'Weighted TPRR', 'Base YPT', 'Separation Score'
             ];
             
             let csvContent = headers.join(',') + '\n';
@@ -1285,7 +1306,7 @@
                     `"${result.recommendation}"`,
                     result.target_share,
                     result.weighted_tprr,
-                    result.weighted_ypt,
+                    result.base_ypt,
                     result.separation_score
                 ];
                 csvContent += row.join(',') + '\n';
