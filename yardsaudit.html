@@ -22,7 +22,7 @@
             min-height: 100vh;
         }
         
-        /* Enhanced animated background - matching business site */
+        /* Enhanced animated background */
         body::before {
             content: '';
             position: fixed;
@@ -53,6 +53,11 @@
         @keyframes rotate {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
+        }
+
+        @keyframes shimmer {
+            0% { opacity: 0.3; }
+            100% { opacity: 1; }
         }
         
         .password-overlay {
@@ -92,11 +97,6 @@
             height: 2px;
             background: linear-gradient(90deg, transparent, #FFD700, transparent);
             animation: shimmer 3s ease-in-out infinite alternate;
-        }
-
-        @keyframes shimmer {
-            0% { opacity: 0.3; }
-            100% { opacity: 1; }
         }
         
         .password-title {
@@ -381,6 +381,19 @@
             font-weight: 600;
         }
 
+        .debug {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            color: #ccc;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
         .csv-upload-info {
             background: rgba(59, 130, 246, 0.1);
             border: 2px solid rgba(59, 130, 246, 0.3);
@@ -568,6 +581,12 @@
                 </div>
                 
                 <button class="calculate-btn" id="processWeekBtn" disabled>Process Selected Week</button>
+
+                <!-- Debug Console -->
+                <div id="debugConsole" class="debug" style="display: none;">
+                    <strong>Debug Console:</strong><br>
+                    <div id="debugOutput"></div>
+                </div>
             </div>
 
             <div id="weekProgress" class="week-progress">
@@ -623,10 +642,27 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
+    <!-- Load Supabase from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
 
     <script>
-        // Initialize Supabase
+        // Debug logging function
+        function debugLog(message) {
+            console.log('[NFL Model Debug]:', message);
+            const debugOutput = document.getElementById('debugOutput');
+            if (debugOutput) {
+                debugOutput.innerHTML += new Date().toLocaleTimeString() + ': ' + message + '<br>';
+                debugOutput.scrollTop = debugOutput.scrollHeight;
+            }
+        }
+
+        // Enable debug mode
+        function enableDebugMode() {
+            document.getElementById('debugConsole').style.display = 'block';
+            debugLog('Debug mode enabled');
+        }
+
+        // Initialize Supabase with better error handling
         let supabaseClient = null;
         const SUPABASE_URL = 'https://pyjtwdgapmbdgtpflzan.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5anR3ZGdhcG1iZGd0cGZsemFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTExNTEzNTgsImV4cCI6MjA2NjcyNzM1OH0._Bt_XomEPAYRqC6zNgkNDwq66XFlpMoPbNMB6Eb4USo';
@@ -637,15 +673,32 @@
         let weekResults = [];
         let currentWeek = null;
 
+        // Initialize application
         window.addEventListener('load', function() {
-            if (typeof window.supabase !== 'undefined') {
-                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            } else if (typeof Supabase !== 'undefined') {
-                supabaseClient = Supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            }
+            debugLog('Application loading...');
             
-            setupPasswordHandling();
-            document.getElementById('processWeekBtn').addEventListener('click', processSelectedWeek);
+            try {
+                // Initialize Supabase client
+                if (typeof window.supabase !== 'undefined') {
+                    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                    debugLog('Supabase client initialized successfully');
+                } else if (typeof Supabase !== 'undefined') {
+                    supabaseClient = Supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                    debugLog('Supabase client initialized successfully (fallback)');
+                } else {
+                    throw new Error('Supabase library not loaded');
+                }
+                
+                setupPasswordHandling();
+                document.getElementById('processWeekBtn').addEventListener('click', processSelectedWeek);
+                
+                debugLog('Application initialized successfully');
+                
+            } catch (error) {
+                debugLog('Error initializing application: ' + error.message);
+                enableDebugMode();
+                showError('Failed to initialize application. Check debug console for details.');
+            }
         });
 
         // Security Enhancements
@@ -658,6 +711,11 @@
             if (e.ctrlKey && e.shiftKey && e.keyCode === 73) e.preventDefault();
             if (e.ctrlKey && e.shiftKey && e.keyCode === 74) e.preventDefault();
             if (e.ctrlKey && e.keyCode === 85) e.preventDefault();
+            
+            // Enable debug mode with Ctrl+Shift+D
+            if (e.ctrlKey && e.shiftKey && e.keyCode === 68) {
+                enableDebugMode();
+            }
         });
 
         function setupPasswordHandling() {
@@ -672,9 +730,11 @@
                 if (passwordInput.value === correctPassword) {
                     passwordOverlay.style.display = 'none';
                     mainContent.style.display = 'block';
+                    debugLog('Password authenticated successfully');
                 } else {
                     passwordError.style.display = 'block';
                     passwordInput.value = '';
+                    debugLog('Invalid password attempt');
                     setTimeout(() => {
                         passwordError.style.display = 'none';
                     }, 3000);
@@ -695,12 +755,17 @@
             const file = event.target.files[0];
             if (!file) return;
 
+            debugLog('CSV file selected: ' + file.name);
+
             const reader = new FileReader();
             reader.onload = function(e) {
                 try {
                     const csvText = e.target.result;
+                    debugLog('CSV content length: ' + csvText.length + ' characters');
+                    
                     const lines = csvText.split('\n');
                     const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+                    debugLog('CSV headers: ' + headers.join(', '));
                     
                     csvData = [];
                     for (let i = 1; i < lines.length; i++) {
@@ -714,12 +779,18 @@
                         }
                     }
 
+                    debugLog('Total CSV rows parsed: ' + csvData.length);
+
                     // Get unique weeks
                     const weeks = [...new Set(csvData.map(row => parseInt(row.week)))].sort((a, b) => a - b);
+                    debugLog('Weeks found: ' + weeks.join(', '));
                     
                     // Filter for only "Over" bets to get unique player count
                     const overBets = csvData.filter(row => row.bet_type === 'Over');
                     const uniquePlayers = [...new Set(overBets.map(row => row.player_name))].length;
+                    
+                    debugLog('Over bets found: ' + overBets.length);
+                    debugLog('Unique players: ' + uniquePlayers);
                     
                     // Update stats display
                     document.getElementById('csvStatsText').textContent = 
@@ -742,11 +813,12 @@
                     weekSelect.addEventListener('change', function() {
                         const processBtn = document.getElementById('processWeekBtn');
                         processBtn.disabled = !this.value;
+                        debugLog('Week selected: ' + this.value);
                     });
 
-                    showSuccess(`CSV loaded successfully! Ready to process weeks 5-17.`);
-
                 } catch (error) {
+                    debugLog('Error parsing CSV: ' + error.message);
+                    enableDebugMode();
                     showError('Error parsing CSV file. Please check the format.');
                 }
             };
@@ -803,6 +875,7 @@
                 return;
             }
 
+            debugLog('Starting processing for Week ' + selectedWeek);
             currentWeek = selectedWeek;
 
             // Filter data for selected week and only "Over" bets
@@ -810,6 +883,8 @@
                 parseInt(row.week) === parseInt(selectedWeek) && 
                 row.bet_type === 'Over'
             );
+
+            debugLog('Filtered week data: ' + weekData.length + ' players');
 
             if (weekData.length === 0) {
                 showError(`No "Over" betting data found for Week ${selectedWeek}.`);
@@ -827,6 +902,8 @@
             weekResults = [];
 
             let processedCount = 0;
+            let successCount = 0;
+            let errorCount = 0;
             const totalCount = weekData.length;
 
             for (let i = 0; i < weekData.length; i++) {
@@ -838,27 +915,41 @@
                 progressText.textContent = `Processing ${processedCount + 1} of ${totalCount}: ${row.player_name}`;
 
                 try {
+                    debugLog(`Processing player ${processedCount + 1}/${totalCount}: ${row.player_name}`);
                     const result = await processPlayer(row);
                     if (result) {
                         weekResults.push(result);
+                        successCount++;
+                        debugLog(`✓ Successfully processed ${row.player_name}`);
+                    } else {
+                        errorCount++;
+                        debugLog(`✗ Failed to process ${row.player_name} (no result returned)`);
                     }
                 } catch (error) {
-                    console.error(`Error processing ${row.player_name}:`, error);
-                    // Continue with next player
+                    errorCount++;
+                    debugLog(`✗ Error processing ${row.player_name}: ${error.message}`);
                 }
 
                 processedCount++;
                 
                 // Small delay to prevent overwhelming the database
-                await new Promise(resolve => setTimeout(resolve, 50));
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
 
             // Complete progress
             progressFill.style.width = '100%';
-            progressText.textContent = `Week ${selectedWeek} processing complete!`;
+            progressText.textContent = `Week ${selectedWeek} processing complete! (${successCount} successful, ${errorCount} errors)`;
+
+            debugLog(`Processing complete: ${successCount} successful, ${errorCount} errors`);
 
             showLoading(false);
-            displayWeekResults();
+            
+            if (successCount > 0) {
+                displayWeekResults();
+            } else {
+                enableDebugMode();
+                showError(`No valid projections generated for Week ${selectedWeek}. Check debug console for details.`);
+            }
         }
 
         async function processPlayer(csvRow) {
@@ -868,8 +959,16 @@
             const homeTeam = normalizeTeamName(csvRow.home_team);
             const awayTeam = normalizeTeamName(csvRow.away_team);
 
+            debugLog(`Processing ${playerName}: Line=${bettingLine}, HomeTeam=${homeTeam}, AwayTeam=${awayTeam}`);
+
             try {
+                // Test Supabase connection first
+                if (!supabaseClient) {
+                    throw new Error('Supabase client not initialized');
+                }
+
                 // Get player's team and stats
+                debugLog(`Querying player data for: ${playerName}`);
                 const { data: playerData, error: playerError } = await supabaseClient
                     .from('player_cover_stats')
                     .select('team, yprr_player, routes_run, g, separation_score')
@@ -878,19 +977,29 @@
                     .eq('coverage_type', 'Overall')
                     .limit(1);
 
-                if (playerError || !playerData || playerData.length === 0) {
+                if (playerError) {
+                    debugLog(`Database error for ${playerName}: ${playerError.message}`);
+                    throw new Error(`Database error: ${playerError.message}`);
+                }
+
+                if (!playerData || playerData.length === 0) {
+                    debugLog(`No player data found for: ${playerName}`);
                     return null;
                 }
 
                 const playerTeam = playerData[0].team;
                 const opponentTeam = getOpponentTeam(playerTeam, homeTeam, awayTeam);
                 
+                debugLog(`${playerName} plays for ${playerTeam} vs ${opponentTeam}`);
+
                 // Default game flow (neutral)
                 const gameFlow = 3;
                 
                 // Calculate routes per game
                 const routesPerGame = playerData[0].routes_run && playerData[0].g ? 
                     (playerData[0].routes_run / playerData[0].g) : 35;
+
+                debugLog(`Routes per game: ${routesPerGame}`);
 
                 // Get weighted stats and calculate projection
                 const projection = await calculateReceivingYardsProjection(
@@ -901,7 +1010,12 @@
                     routesPerGame
                 );
 
-                if (!projection) return null;
+                if (!projection) {
+                    debugLog(`No projection generated for ${playerName}`);
+                    return null;
+                }
+
+                debugLog(`Projection for ${playerName}: ${projection.expectedYards} yards`);
 
                 // Calculate edge and recommendation
                 const edgeDifference = projection.expectedYards - bettingLine;
@@ -912,6 +1026,8 @@
                 } else if (Math.abs(edgeDifference) >= 6) {
                     recommendation = edgeDifference > 0 ? 'MODERATE OVER' : 'MODERATE UNDER';
                 }
+
+                debugLog(`${playerName} recommendation: ${recommendation} (edge: ${edgeDifference.toFixed(1)})`);
 
                 return {
                     week: csvRow.week,
@@ -929,13 +1045,15 @@
                 };
 
             } catch (error) {
-                console.error(`Error processing ${playerName}:`, error);
-                return null;
+                debugLog(`Error processing ${playerName}: ${error.message}`);
+                throw error;
             }
         }
 
         async function calculateReceivingYardsProjection(playerName, playerTeam, opponentTeam, gameFlow, routesPerGame) {
             try {
+                debugLog(`Calculating projection for ${playerName}`);
+
                 // Get player's overall stats for target share
                 const { data: playerData, error: playerError } = await supabaseClient
                     .from('player_cover_stats')
@@ -946,13 +1064,21 @@
                     .eq('coverage_type', 'Overall')
                     .limit(1);
 
-                if (playerError || !playerData || playerData.length === 0) {
+                if (playerError) {
+                    debugLog(`Error getting player overall stats: ${playerError.message}`);
+                    throw new Error(`Player stats error: ${playerError.message}`);
+                }
+
+                if (!playerData || playerData.length === 0) {
+                    debugLog(`No overall stats found for ${playerName}`);
                     throw new Error(`Player "${playerName}" not found.`);
                 }
 
                 const targetShare = (playerData[0].tprr_player * 100);
+                debugLog(`Target share for ${playerName}: ${targetShare.toFixed(1)}%`);
 
                 // Get opponent's coverage frequencies
+                debugLog(`Getting coverage data for ${opponentTeam}`);
                 const { data: coverageData, error: coverageError } = await supabaseClient
                     .from('defensive_coverages')
                     .select('*')
@@ -960,7 +1086,13 @@
                     .eq('season', SEASON)
                     .limit(1);
 
-                if (coverageError || !coverageData || coverageData.length === 0) {
+                if (coverageError) {
+                    debugLog(`Error getting coverage data: ${coverageError.message}`);
+                    throw new Error(`Coverage data error: ${coverageError.message}`);
+                }
+
+                if (!coverageData || coverageData.length === 0) {
+                    debugLog(`No coverage data found for ${opponentTeam}`);
                     throw new Error(`No coverage data found for ${opponentTeam}.`);
                 }
 
@@ -974,7 +1106,10 @@
                     { name: 'Cover 6', pct: coverage.cover_6_pct }
                 ];
 
+                debugLog(`Coverage breakdown for ${opponentTeam}: Man=${coverage.man_pct}%, C2=${coverage.cover_2_pct}%, C3=${coverage.cover_3_pct}%`);
+
                 // Get player stats for all coverage types
+                debugLog(`Getting detailed coverage stats for ${playerName}`);
                 const { data: playerStats, error: statsError } = await supabaseClient
                     .from('player_cover_stats')
                     .select('coverage_type, yprr_player, separation_score')
@@ -983,9 +1118,17 @@
                     .eq('season', SEASON)
                     .in('coverage_type', ['Man Coverage', 'Cover 2', 'Cover 3', 'Cover 4', 'Cover 6']);
 
-                if (statsError || !playerStats || playerStats.length === 0) {
+                if (statsError) {
+                    debugLog(`Error getting coverage stats: ${statsError.message}`);
+                    throw new Error(`Coverage stats error: ${statsError.message}`);
+                }
+
+                if (!playerStats || playerStats.length === 0) {
+                    debugLog(`No detailed coverage stats found for ${playerName}`);
                     throw new Error(`No detailed coverage stats found for ${playerName}.`);
                 }
+
+                debugLog(`Found ${playerStats.length} coverage stats for ${playerName}`);
 
                 // Calculate weighted YPRR and separation scores
                 let weightedYPRR = 0;
@@ -1000,16 +1143,20 @@
                             weightedYPRR += (playerStat.yprr_player) * weight;
                             weightedSeparation += (playerStat.separation_score || 0.2) * weight;
                             totalWeight += weight;
+                            debugLog(`${coverage.name}: weight=${weight.toFixed(2)}, YPRR=${playerStat.yprr_player}`);
                         }
                     }
                 });
 
                 if (totalWeight === 0) {
+                    debugLog(`No valid coverage weights for ${playerName}`);
                     throw new Error(`No valid coverage data found for ${playerName}.`);
                 }
 
                 weightedYPRR = weightedYPRR / totalWeight;
                 weightedSeparation = weightedSeparation / totalWeight;
+
+                debugLog(`Weighted stats - YPRR: ${weightedYPRR.toFixed(2)}, Separation: ${weightedSeparation.toFixed(3)}`);
 
                 // Calculate receiving yards projection
                 const result = calculateReceivingYardsScore(
@@ -1020,6 +1167,8 @@
                     gameFlow
                 );
 
+                debugLog(`Final projection: ${result.expectedYards} yards`);
+
                 return {
                     expectedYards: result.expectedYards,
                     targetShare: targetShare.toFixed(1),
@@ -1028,34 +1177,42 @@
                 };
 
             } catch (error) {
-                console.error(`Error calculating projection for ${playerName}:`, error);
-                return null;
+                debugLog(`Error in calculateReceivingYardsProjection: ${error.message}`);
+                throw error;
             }
         }
 
         function calculateReceivingYardsScore(weightedYPRR, weightedSeparation, targetShare, routesPerGame, gameFlow) {
+            debugLog(`Calculating score with: YPRR=${weightedYPRR}, Sep=${weightedSeparation}, TargetShare=${targetShare}, Routes=${routesPerGame}`);
+            
             // === RECEIVING YARDS PROJECTION MODEL ===
             
             // 1. Base calculation: Routes × Target Share × Yards per Route Run
             const baseYards = routesPerGame * (targetShare / 100) * weightedYPRR;
+            debugLog(`Base yards: ${baseYards.toFixed(1)}`);
             
             // 2. Separation adjustment (better separation = more YAC)
             // Convert separation to z-score vs NFL average (0.15 mean, 0.05 std dev)
             const separationZScore = (weightedSeparation - 0.15) / 0.05;
             const separationMultiplier = 1.0 + (separationZScore * 0.10); // ±20% based on separation
+            debugLog(`Separation multiplier: ${separationMultiplier.toFixed(3)}`);
             
             // 3. Game script multiplier
             // Heavy favorites (1) = 0.90x, Heavy underdogs (5) = 1.20x  
             const gameScriptMultiplier = 0.80 + (gameFlow * 0.10);
+            debugLog(`Game script multiplier: ${gameScriptMultiplier.toFixed(2)}`);
             
             // 4. Apply adjustments
             const adjustedYards = baseYards * separationMultiplier * gameScriptMultiplier;
+            debugLog(`Adjusted yards: ${adjustedYards.toFixed(1)}`);
             
             // 5. Add some variance based on target volume (high-volume players more consistent)
             const volumeStability = Math.min(1.0, (targetShare / 100) * 4); // Players with 25%+ target share get full stability
             const varianceReduction = 0.85 + (volumeStability * 0.15); // 85-100% of projection
+            debugLog(`Volume stability: ${volumeStability.toFixed(2)}, Variance reduction: ${varianceReduction.toFixed(2)}`);
             
             const expectedYards = Math.max(0, adjustedYards * varianceReduction);
+            debugLog(`Final expected yards: ${expectedYards.toFixed(1)}`);
             
             return {
                 expectedYards: parseFloat(expectedYards.toFixed(1))
@@ -1067,6 +1224,8 @@
                 showError(`No valid projections generated for Week ${currentWeek}.`);
                 return;
             }
+
+            debugLog(`Displaying results for ${weekResults.length} players`);
 
             // Calculate recommendation counts
             const recCounts = {
@@ -1080,6 +1239,8 @@
             weekResults.forEach(result => {
                 recCounts[result.recommendation]++;
             });
+
+            debugLog(`Recommendation counts: ${JSON.stringify(recCounts)}`);
 
             // Update UI
             document.getElementById('weekResultTitle').textContent = `Week ${currentWeek} Results`;
@@ -1104,6 +1265,8 @@
                 showError('No results to download.');
                 return;
             }
+
+            debugLog(`Downloading results for ${weekResults.length} players`);
 
             // Create CSV content
             const headers = [
@@ -1142,6 +1305,8 @@
             a.click();
             document.body.removeChild(a);
             window.URL.revokeObjectURL(url);
+
+            debugLog('CSV download initiated');
         }
 
         function showLoading(isLoading) {
