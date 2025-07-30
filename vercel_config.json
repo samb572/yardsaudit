@@ -1,0 +1,15 @@
+{
+  "name": "nfl-receiving-yards-model",
+  "version": "1.0.0",
+  "description": "NFL Receiving Yards Model - Weekly Batch Processing",
+  "main": "index.html",
+  "scripts": {
+    "dev": "serve -s .",
+    "build": "echo 'No build step required'",
+    "start": "serve -s ."
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "serve": "^14.0.0"
+  }
+}
