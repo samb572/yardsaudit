@@ -60,7 +60,6 @@
         }
         .calculate-btn:hover:not(:disabled) { transform: translateY(-3px) scale(1.02); box-shadow: 0 8px 25px rgba(255, 215, 0, 0.5); }
         .calculate-btn:disabled { opacity: 0.6; cursor: not-allowed; background: rgba(255, 255, 255, 0.2); }
-        .calculate-btn:active { transform: translateY(0); }
         
         .info-text { font-size: 12px; color: rgba(255, 255, 255, 0.6); margin-top: 5px; font-style: italic; }
         .progress-bar { width: 100%; height: 8px; background: rgba(255, 255, 255, 0.1); border-radius: 4px; overflow: hidden; margin: 15px 0; }
@@ -221,6 +220,23 @@
             });
         }
 
+        function parseCSV(csvText, requiredHeaders) {
+            const lines = csvText.split('\n');
+            const headers = lines.shift().trim().split(',').map(h => h.trim().replace(/"/g, ''));
+            
+            if (!requiredHeaders.every(h => headers.includes(h))) {
+                throw new Error(`CSV is missing one or more required headers. Expected: ${requiredHeaders.join(', ')}`);
+            }
+            
+            return lines.map(line => {
+                if (!line.trim()) return null;
+                const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+                const row = {};
+                headers.forEach((header, index) => { row[header] = values[index]; });
+                return row;
+            }).filter(Boolean);
+        }
+
         function handleCSVUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -228,20 +244,8 @@
             const reader = new FileReader();
             reader.onload = e => {
                 try {
-                    const csvText = e.target.result;
-                    const lines = csvText.split('\n');
-                    const headers = lines.shift().trim().split(',').map(h => h.trim().replace(/"/g, ''));
-                    const requiredHeaders = ['week', 'player_name', 'home_team', 'away_team', 'bet_type', 'line', 'odds'];
-                    if (!requiredHeaders.every(h => headers.includes(h))) {
-                        throw new Error(`CSV is missing required headers: ${requiredHeaders.join(', ')}`);
-                    }
-                    csvData = lines.map(line => {
-                        if (!line.trim()) return null;
-                        const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
-                        const row = {};
-                        headers.forEach((header, index) => { row[header] = values[index]; });
-                        return row;
-                    }).filter(Boolean);
+                    const required = ['week', 'player_name', 'home_team', 'away_team', 'bet_type', 'line', 'odds'];
+                    csvData = parseCSV(e.target.result, required);
                     debugLog(`Parsed ${csvData.length} rows from betting lines CSV.`);
                     updateUI_AfterCSVLoad();
                 } catch (error) {
@@ -259,21 +263,12 @@
             reader.onload = e => {
                 try {
                     gamelogData.clear();
-                    const lines = e.target.result.split('\n');
-                    const headers = lines.shift().trim().split(',').map(h => h.trim().replace(/"/g, ''));
-                    if(!headers.includes('player_name') || !headers.includes('yards')) {
-                         throw new Error(`Gamelog CSV must have 'player_name' and 'yards' columns.`);
-                    }
-
-                    lines.forEach(line => {
-                        if (line.trim()) {
-                            const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
-                            const row = {};
-                            headers.forEach((header, index) => { row[header] = values[index]; });
-                            const playerName = row.player_name;
-                            const yards = parseFloat(row.yards);
-                            if (playerName && !isNaN(yards)) gamelogData.set(playerName, yards);
-                        }
+                    const required = ['player_name', 'yards'];
+                    const parsedGamelog = parseCSV(e.target.result, required);
+                    parsedGamelog.forEach(row => {
+                        const playerName = row.player_name;
+                        const yards = parseFloat(row.yards);
+                        if (playerName && !isNaN(yards)) gamelogData.set(playerName, yards);
                     });
                     debugLog(`Parsed ${gamelogData.size} entries from gamelog.`);
                     mergeGamelogData();
@@ -309,6 +304,8 @@
             const errorCount = weekData.length - weekResults.length;
 
             showLoading(false);
+            DOM.weekProgressContainer.style.display = 'none';
+
 
             if (weekResults.length > 0) {
                 debugLog(`Processing complete: ${weekResults.length} successful, ${errorCount} errors.`);
@@ -320,7 +317,6 @@
         
         async function processPlayer(row) {
             const { player_name, line, odds, home_team, away_team } = row;
-            const opponent = getOpponentTeam(home_team, away_team); // Simplified opponent detection
             try {
                 const { data: pData, error: pErr } = await supabaseClient.from('player_cover_stats').select('team, tprr_player, routes_run, g, separation_score').eq('player_name', player_name).eq('season', SEASON).eq('coverage_type', 'Overall').single();
                 if (pErr) throw new Error(`Player data not found.`);
@@ -329,11 +325,12 @@
                 if (yErr) throw new Error(`YPT data not found.`);
 
                 const routesPerGame = pData.routes_run && pData.g ? (pData.routes_run / pData.g) : 35;
-                const projection = await calculateProjection(player_name, pData.team, opponent, routesPerGame, yptData.yards_per_target);
+                const opponentTeam = getOpponentTeam(pData.team, home_team, away_team);
+                const projection = await calculateProjection(player_name, pData.team, opponentTeam, routesPerGame, yptData.yards_per_target);
                 
                 const edge = projection.expectedYards - parseFloat(line);
                 return {
-                    week: currentWeek, player_name, team: pData.team, opponent, 
+                    week: currentWeek, player_name, team: pData.team, opponent: opponentTeam, 
                     betting_line: parseFloat(line), odds: parseInt(odds), projection: projection.expectedYards, 
                     edge: edge.toFixed(1), recommendation: getRecommendation(edge), ...projection.debugStats
                 };
@@ -458,21 +455,33 @@
             return 'PASS';
         }
         
-        function getOpponentTeam(hTeam, aTeam) {
-            return hTeam.includes("LA") ? aTeam : hTeam;
+        function getOpponentTeam(playerTeam, homeTeam, awayTeam) {
+            // A simple heuristic for opponent detection, might need adjustment for team name variations
+            return playerTeam.toLowerCase() === homeTeam.toLowerCase() ? awayTeam : homeTeam;
         }
 
         function downloadResults() {
             if (!weekResults.length) { showError('No results to download.'); return; }
+            debugLog('Initiating CSV download...');
+            
             const hasActuals = weekResults[0]?.hasOwnProperty('actual_yards');
             let headers = ['Week','Player','Team','Opponent','Line','Odds','Projection','Edge','Rec','TargetShare','WeightedTPRR','BaseYPT','SepScore'];
             if (hasActuals) headers.push('ActualYards', 'BetOutcome');
+
             let csvContent = headers.join(',') + '\n';
             weekResults.forEach(r => {
-                let row = [r.week, `"${r.player_name}"`, `"${r.team}"`, `"${r.opponent}"`, r.betting_line, r.odds, r.projection, r.edge, `"${r.recommendation}"`, r.target_share, r.weighted_tprr, r.base_ypt, r.separation_score];
-                if (hasActuals) row.push(r.actual_yards ?? '', r.bet_outcome ?? '');
+                let row = [
+                    r.week, `"${r.player_name}"`, `"${r.team}"`, `"${r.opponent}"`, r.betting_line, r.odds, 
+                    r.projection, r.edge, `"${r.recommendation}"`, r.target_share, r.weighted_tprr, 
+                    r.base_ypt, r.separation_score
+                ];
+                if (hasActuals) {
+                    row.push(r.actual_yards ?? ''); // Use nullish coalescing for cleaner empty strings
+                    row.push(r.bet_outcome ?? '');
+                }
                 csvContent += row.join(',') + '\n';
             });
+            
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
@@ -480,7 +489,9 @@
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
         }
+
 
         function resetUIForNewWeek() {
             weekResults = []; gamelogData.clear();
