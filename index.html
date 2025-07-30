@@ -70,8 +70,10 @@
         .debug { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 10px; margin: 10px 0; font-family: 'Courier New', monospace; font-size: 12px; color: #ccc; max-height: 200px; overflow-y: auto; }
         .csv-upload-info { background: rgba(59,130,246,0.1); border: 2px solid rgba(59,130,246,0.3); border-radius: 12px; padding: 20px; margin-bottom: 25px; color: rgba(255,255,255,0.9); font-size: 14px; line-height: 1.6; }
         .csv-upload-info h4 { color: #3b82f6; margin-bottom: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
-        .csv-stats { background: rgba(255,215,0,0.1); border: 2px solid rgba(255,215,0,0.3); border-radius: 12px; padding: 15px; margin: 15px 0; text-align: center; }
-        
+        .file-status { text-align: center; padding: 10px; border-radius: 8px; margin-top: 10px; font-weight: 600; }
+        .file-status.pending { background: rgba(255, 165, 0, 0.1); color: orange; }
+        .file-status.loaded { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+
         .download-btn {
             background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; border: none;
             padding: 15px 30px; border-radius: 12px; font-weight: 700; cursor: pointer; margin: 10px 5px;
@@ -114,16 +116,26 @@
             <div class="input-card">
                 <div class="csv-upload-info">
                     <h4>1. Upload Betting Lines CSV</h4>
-                    <p>Upload the CSV file containing the betting lines for the weeks you wish to audit.</p>
                     <p><strong>Required Columns:</strong> week, player_name, home_team, away_team, bet_type, line, odds</p>
                 </div>
                 <div class="input-group">
                     <label for="csvFile">Select Betting Lines CSV File</label>
                     <input type="file" id="csvFile" accept=".csv">
+                    <div id="csvFileStatus" class="file-status pending">Waiting for file...</div>
                 </div>
-                <div id="csvStats" class="csv-stats" style="display: none;"></div>
+
+                <div class="csv-upload-info" style="margin-top: 40px;">
+                    <h4>2. Upload Gamelog CSV</h4>
+                    <p><strong>Required Columns:</strong> player_name, yards</p>
+                </div>
+                <div class="input-group">
+                    <label for="gamelogCsvFile">Select Gamelog CSV File</label>
+                    <input type="file" id="gamelogCsvFile" accept=".csv">
+                     <div id="gamelogFileStatus" class="file-status pending">Waiting for file...</div>
+                </div>
+
                 <div class="input-group" id="weekSelectorContainer" style="display: none;">
-                    <label for="weekSelect">2. Select Week to Process</label>
+                    <label for="weekSelect">3. Select Week to Process</label>
                     <select id="weekSelect"><option value="">Choose a week...</option></select>
                 </div>
                 <button class="calculate-btn" id="processWeekBtn" disabled>Process Selected Week</button>
@@ -141,17 +153,6 @@
                     <p id="weekResultSummary"></p>
                     <div class="recommendations-grid" id="recommendationsGrid"></div>
                 </div>
-                <div class="input-card" id="gamelogUploadContainer" style="margin-top: 30px;">
-                     <div class="csv-upload-info">
-                        <h4>3. Upload Gamelog CSV for Audit</h4>
-                        <p>Upload the CSV with the actual results for the processed week.</p>
-                        <p><strong>Required Columns:</strong> player_name, yards</p>
-                     </div>
-                     <div class="input-group">
-                        <label for="gamelogCsvFile">Select Gamelog CSV File</label>
-                        <input type="file" id="gamelogCsvFile" accept=".csv">
-                     </div>
-                </div>
                 <div id="detailedResultsContainer"></div>
                 <div style="text-align: center; margin-top: 20px;">
                     <button class="download-btn" id="downloadBtn">📊 Download Audit Results CSV</button>
@@ -165,7 +166,8 @@
         const DOM = {
             csvFileInput: document.getElementById('csvFile'),
             gamelogFileInput: document.getElementById('gamelogCsvFile'),
-            csvStats: document.getElementById('csvStats'),
+            csvFileStatus: document.getElementById('csvFileStatus'),
+            gamelogFileStatus: document.getElementById('gamelogFileStatus'),
             weekSelectorContainer: document.getElementById('weekSelectorContainer'),
             weekSelect: document.getElementById('weekSelect'),
             processWeekBtn: document.getElementById('processWeekBtn'),
@@ -208,6 +210,9 @@
         function setupEventListeners() {
             DOM.csvFileInput.addEventListener('change', handleCSVUpload);
             DOM.gamelogFileInput.addEventListener('change', handleGamelogUpload);
+            DOM.weekSelect.addEventListener('change', () => {
+                 DOM.processWeekBtn.disabled = !DOM.weekSelect.value;
+            });
             DOM.processWeekBtn.addEventListener('click', processSelectedWeek);
             DOM.downloadBtn.addEventListener('click', downloadResults);
         }
@@ -221,7 +226,7 @@
         }
 
         function parseCSV(csvText, requiredHeaders) {
-            const lines = csvText.split('\n');
+            const lines = csvText.split('\n').filter(line => line.trim() !== '');
             const headers = lines.shift().trim().split(',').map(h => h.trim().replace(/"/g, ''));
             
             if (!requiredHeaders.every(h => headers.includes(h))) {
@@ -229,27 +234,27 @@
             }
             
             return lines.map(line => {
-                if (!line.trim()) return null;
                 const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
                 const row = {};
                 headers.forEach((header, index) => { row[header] = values[index]; });
                 return row;
-            }).filter(Boolean);
+            });
         }
 
         function handleCSVUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
-            debugLog(`Betting lines CSV selected: ${file.name}`);
             const reader = new FileReader();
             reader.onload = e => {
                 try {
                     const required = ['week', 'player_name', 'home_team', 'away_team', 'bet_type', 'line', 'odds'];
                     csvData = parseCSV(e.target.result, required);
-                    debugLog(`Parsed ${csvData.length} rows from betting lines CSV.`);
-                    updateUI_AfterCSVLoad();
+                    updateFileStatus(DOM.csvFileStatus, `${csvData.length} rows loaded.`);
+                    checkPrerequisites();
                 } catch (error) {
                     handleFatalError('Error parsing betting lines CSV: ' + error.message);
+                    updateFileStatus(DOM.csvFileStatus, 'Error!', false);
+                    csvData = null;
                 }
             };
             reader.readAsText(file);
@@ -257,8 +262,7 @@
 
         function handleGamelogUpload(event) {
             const file = event.target.files[0];
-            if (!file || weekResults.length === 0) return;
-            debugLog(`Gamelog CSV selected: ${file.name}`);
+            if (!file) return;
             const reader = new FileReader();
             reader.onload = e => {
                 try {
@@ -270,15 +274,22 @@
                         const yards = parseFloat(row.yards);
                         if (playerName && !isNaN(yards)) gamelogData.set(playerName, yards);
                     });
-                    debugLog(`Parsed ${gamelogData.size} entries from gamelog.`);
-                    mergeGamelogData();
-                    renderDetailedResultsTable();
-                    showSuccess('Gamelog loaded. Audit results are updated.');
+                    updateFileStatus(DOM.gamelogFileStatus, `${gamelogData.size} entries loaded.`);
+                    checkPrerequisites();
                 } catch (error) {
-                    showError('Error parsing gamelog file: ' + error.message);
+                    handleFatalError('Error parsing gamelog file: ' + error.message);
+                    updateFileStatus(DOM.gamelogFileStatus, 'Error!', false);
+                    gamelogData.clear();
                 }
             };
             reader.readAsText(file);
+        }
+        
+        function checkPrerequisites() {
+            if (csvData && gamelogData.size > 0) {
+                debugLog('All prerequisites met. Populating week selector.');
+                updateUI_AfterCSVLoad();
+            }
         }
 
         async function processSelectedWeek() {
@@ -306,7 +317,6 @@
             showLoading(false);
             DOM.weekProgressContainer.style.display = 'none';
 
-
             if (weekResults.length > 0) {
                 debugLog(`Processing complete: ${weekResults.length} successful, ${errorCount} errors.`);
                 displayWeekResults();
@@ -329,11 +339,24 @@
                 const projection = await calculateProjection(player_name, pData.team, opponentTeam, routesPerGame, yptData.yards_per_target);
                 
                 const edge = projection.expectedYards - parseFloat(line);
-                return {
+                
+                const result = {
                     week: currentWeek, player_name, team: pData.team, opponent: opponentTeam, 
                     betting_line: parseFloat(line), odds: parseInt(odds), projection: projection.expectedYards, 
                     edge: edge.toFixed(1), recommendation: getRecommendation(edge), ...projection.debugStats
                 };
+                
+                // Merge gamelog data right here
+                const actualYards = gamelogData.get(player_name);
+                if (actualYards !== undefined) {
+                    result.actual_yards = actualYards;
+                    if (actualYards > result.betting_line) result.bet_outcome = 'WIN';
+                    else if (actualYards < result.betting_line) result.bet_outcome = 'LOSS';
+                    else result.bet_outcome = 'PUSH';
+                }
+
+                return result;
+
             } catch (error) {
                 debugLog(`Failed to process ${player_name}: ${error.message}`);
                 return null;
@@ -375,34 +398,18 @@
             };
         }
         
-        function mergeGamelogData() {
-            weekResults.forEach(r => {
-                const actualYards = gamelogData.get(r.player_name);
-                if (actualYards !== undefined) {
-                    r.actual_yards = actualYards;
-                    if (actualYards > r.betting_line) r.bet_outcome = 'WIN';
-                    else if (actualYards < r.betting_line) r.bet_outcome = 'LOSS';
-                    else r.bet_outcome = 'PUSH';
-                }
-            });
-        }
-        
         function updateUI_AfterCSVLoad() {
             try {
-                const overBets = csvData.filter(r => r.bet_type === 'Over');
                 const weeks = [...new Set(csvData.map(r => parseInt(r.week)))].filter(Boolean).sort((a, b) => a - b);
                 if (weeks.length === 0) throw new Error("No valid weeks found in 'week' column.");
-
-                DOM.csvStats.innerHTML = `<p>${overBets.length} betting lines found across ${weeks.length} weeks.</p>`;
-                DOM.csvStats.style.display = 'block';
                 
                 DOM.weekSelect.innerHTML = '<option value="">Choose a week...</option>';
                 weeks.forEach(w => {
-                    const count = overBets.filter(r => r.week == w).length;
+                    const count = csvData.filter(r => r.week == w && r.bet_type === 'Over').length;
                     DOM.weekSelect.innerHTML += `<option value="${w}">Week ${w} (${count} players)</option>`;
                 });
                 DOM.weekSelectorContainer.style.display = 'block';
-                DOM.weekSelect.onchange = () => { DOM.processWeekBtn.disabled = !DOM.weekSelect.value; };
+                DOM.processWeekBtn.disabled = !DOM.weekSelect.value;
             } catch (error) {
                 handleFatalError(error.message);
                 csvData = null;
@@ -424,7 +431,7 @@
             
             renderDetailedResultsTable();
             DOM.resultsContainer.style.display = 'block';
-            showSuccess(`Week ${currentWeek} processing complete! Ready for audit.`);
+            showSuccess(`Week ${currentWeek} processing complete!`);
         }
         
         function renderDetailedResultsTable() {
@@ -433,18 +440,20 @@
             
             const table = document.createElement('table');
             table.className = 'results-table';
-            const hasActuals = weekResults[0]?.hasOwnProperty('actual_yards');
-            const headers = ['Player', 'Team', 'Opp', 'Line', 'Proj.', 'Edge', 'Rec.'];
-            if (hasActuals) headers.push('Actual', 'Outcome');
+            const headers = ['Player', 'Team', 'Opp', 'Line', 'Proj.', 'Actual', 'Edge', 'Outcome', 'Rec.'];
             table.createTHead().insertRow().innerHTML = headers.map(h => `<th>${h}</th>`).join('');
+            
             const tbody = table.createTBody();
             weekResults.forEach(r => {
                 const row = tbody.insertRow();
-                let cells = `<td>${r.player_name}</td><td>${r.team}</td><td>${r.opponent}</td><td>${r.betting_line.toFixed(1)}</td><td>${r.projection.toFixed(1)}</td><td>${r.edge}</td><td>${r.recommendation}</td>`;
-                if (hasActuals) {
-                    cells += `<td>${r.actual_yards !== undefined ? r.actual_yards.toFixed(1) : 'N/A'}</td><td class="${(r.bet_outcome || '').toLowerCase()}">${r.bet_outcome || 'N/A'}</td>`;
-                }
-                row.innerHTML = cells;
+                row.innerHTML = `
+                    <td>${r.player_name}</td><td>${r.team}</td><td>${r.opponent}</td>
+                    <td>${r.betting_line.toFixed(1)}</td><td>${r.projection.toFixed(1)}</td>
+                    <td>${r.actual_yards !== undefined ? r.actual_yards.toFixed(1) : 'N/A'}</td>
+                    <td>${r.edge}</td>
+                    <td class="${(r.bet_outcome || '').toLowerCase()}">${r.bet_outcome || 'N/A'}</td>
+                    <td>${r.recommendation}</td>
+                `;
             });
             DOM.detailedResultsContainer.appendChild(table);
         }
@@ -456,29 +465,21 @@
         }
         
         function getOpponentTeam(playerTeam, homeTeam, awayTeam) {
-            // A simple heuristic for opponent detection, might need adjustment for team name variations
-            return playerTeam.toLowerCase() === homeTeam.toLowerCase() ? awayTeam : homeTeam;
+            return playerTeam.trim().toLowerCase() === homeTeam.trim().toLowerCase() ? awayTeam : homeTeam;
         }
 
         function downloadResults() {
             if (!weekResults.length) { showError('No results to download.'); return; }
             debugLog('Initiating CSV download...');
             
-            const hasActuals = weekResults[0]?.hasOwnProperty('actual_yards');
-            let headers = ['Week','Player','Team','Opponent','Line','Odds','Projection','Edge','Rec','TargetShare','WeightedTPRR','BaseYPT','SepScore'];
-            if (hasActuals) headers.push('ActualYards', 'BetOutcome');
-
+            let headers = ['Week','Player','Team','Opponent','Line','Odds','Projection','ActualYards','Edge','BetOutcome','Rec','TargetShare','WeightedTPRR','BaseYPT','SepScore'];
             let csvContent = headers.join(',') + '\n';
             weekResults.forEach(r => {
                 let row = [
                     r.week, `"${r.player_name}"`, `"${r.team}"`, `"${r.opponent}"`, r.betting_line, r.odds, 
-                    r.projection, r.edge, `"${r.recommendation}"`, r.target_share, r.weighted_tprr, 
-                    r.base_ypt, r.separation_score
+                    r.projection, r.actual_yards ?? '', r.edge, r.bet_outcome ?? '', `"${r.recommendation}"`, 
+                    r.target_share, r.weighted_tprr, r.base_ypt, r.separation_score
                 ];
-                if (hasActuals) {
-                    row.push(r.actual_yards ?? ''); // Use nullish coalescing for cleaner empty strings
-                    row.push(r.bet_outcome ?? '');
-                }
                 csvContent += row.join(',') + '\n';
             });
             
@@ -492,12 +493,10 @@
             URL.revokeObjectURL(a.href);
         }
 
-
         function resetUIForNewWeek() {
-            weekResults = []; gamelogData.clear();
+            weekResults = [];
             hideAllMessages();
             DOM.detailedResultsContainer.innerHTML = '';
-            DOM.gamelogFileInput.value = '';
         }
 
         function showLoading(isLoading, text = '') {
@@ -514,6 +513,11 @@
             }
             container.querySelector('.progress-fill').style.width = total > 0 ? `${(current / total) * 100}%` : '0%';
             container.querySelector('.progress-text').textContent = text;
+        }
+        
+        function updateFileStatus(element, text, isSuccess = true) {
+            element.textContent = text;
+            element.className = 'file-status ' + (isSuccess ? 'loaded' : 'pending');
         }
         
         function hideAllMessages() { [DOM.errorDiv, DOM.successDiv, DOM.loadingDiv, DOM.resultsContainer, DOM.weekProgressContainer].forEach(el => el.style.display = 'none'); }
