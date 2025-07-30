@@ -22,7 +22,6 @@
             min-height: 100vh;
         }
         
-        /* Enhanced animated background */
         body::before {
             content: '';
             position: fixed;
@@ -511,10 +510,9 @@
             margin-top: 5px;
         }
         
-        /* New Styles for Detailed Results Table */
         #detailedResultsContainer {
             margin-top: 30px;
-            overflow-x: auto; /* For mobile responsiveness */
+            overflow-x: auto;
         }
         .results-table {
             width: 100%;
@@ -591,9 +589,8 @@
                 </div>
                 
                 <div class="input-group">
-                    <label for="csvFile">Select CSV File</label>
+                    <label for="csvFile">Select Betting Lines CSV File</label>
                     <input type="file" id="csvFile" accept=".csv" onchange="handleCSVUpload(event)">
-                    <div class="info-text">Upload your NFL weeks 5-17 receiving yards betting data</div>
                 </div>
                 
                 <div id="csvStats" class="csv-stats" style="display: none;">
@@ -606,7 +603,6 @@
                     <select id="weekSelect">
                         <option value="">Choose a week...</option>
                     </select>
-                    <div class="info-text">Process one week at a time for optimal performance</div>
                 </div>
                 
                 <button class="calculate-btn" id="processWeekBtn" disabled>Process Selected Week</button>
@@ -624,27 +620,21 @@
                 <div id="progressText">Initializing...</div>
             </div>
             
-            <div id="loadingDiv" class="loading" style="display: none;">
-                Processing week data...
-            </div>
-            
+            <div id="loadingDiv" class="loading" style="display: none;"></div>
             <div id="errorDiv" class="error" style="display: none;"></div>
-            
             <div id="successDiv" class="success" style="display: none;"></div>
 
             <div id="weekResults" class="results" style="display: none;">
                 <div class="week-results-summary">
                     <h4 id="weekResultTitle">Week Results</h4>
                     <p id="weekResultSummary">-</p>
-                    
-                    <div class="recommendations-grid" id="recommendationsGrid">
-                        </div>
+                    <div class="recommendations-grid" id="recommendationsGrid"></div>
                 </div>
                 
-                <div class="input-card" id="gamelogUploadContainer" style="margin-top: 30px; display: none;">
+                <div class="input-card" id="gamelogUploadContainer" style="margin-top: 30px;">
                      <div class="csv-upload-info">
-                        <h4>Upload Gamelog CSV for Comparison</h4>
-                        <p>To see how the projections fared against actual results, upload a CSV with the outcomes for this week.</p>
+                        <h4>Upload Gamelog CSV for Audit</h4>
+                        <p>To audit the projections, upload a CSV with the actual results for this week.</p>
                         <p><strong>Expected format:</strong> player_name,yards</p>
                      </div>
                      <div class="input-group">
@@ -658,7 +648,7 @@
 
                 <div style="text-align: center; margin-top: 20px;">
                     <button class="download-btn" id="downloadBtn" onclick="downloadResults()">
-                        📊 Download Week Results CSV
+                        📊 Download Audit Results CSV
                     </button>
                 </div>
             </div>
@@ -668,78 +658,48 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
 
     <script>
-        // Debug logging function
-        function debugLog(message) {
-            console.log('[NFL Model Debug]:', message);
-            const debugOutput = document.getElementById('debugOutput');
-            if (debugOutput) {
-                debugOutput.innerHTML += new Date().toLocaleTimeString() + ': ' + message + '<br>';
-                debugOutput.scrollTop = debugOutput.scrollHeight;
-            }
-        }
-
-        // Enable debug mode
-        function enableDebugMode() {
-            document.getElementById('debugConsole').style.display = 'block';
-            debugLog('Debug mode enabled');
-        }
-
-        // Initialize Supabase with better error handling
-        let supabaseClient = null;
+        // --- CONSTANTS AND GLOBAL VARIABLES ---
         const SUPABASE_URL = 'https://pyjtwdgapmbdgtpflzan.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5anR3ZGdhcG1iZGd0cGZsemFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTExNTEzNTgsImV4cCI6MjA2NjcyNzM1OH0._Bt_XomEPAYRqC6zNgkNDwq66XFlpMoPbNMB6Eb4USo';
         const SEASON = 2024;
-
-        // Global variables
+        let supabaseClient = null;
         let csvData = null;
         let weekResults = [];
         let gamelogData = new Map();
         let currentWeek = null;
 
-        // Initialize application
+        // --- INITIALIZATION ---
         window.addEventListener('load', function() {
             debugLog('Application loading...');
-            
             try {
-                // Initialize Supabase client
-                if (typeof window.supabase !== 'undefined') {
+                if (window.supabase) {
                     supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                     debugLog('Supabase client initialized successfully');
-                } else if (typeof Supabase !== 'undefined') {
-                    supabaseClient = Supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-                    debugLog('Supabase client initialized successfully (fallback)');
                 } else {
                     throw new Error('Supabase library not loaded');
                 }
                 
                 setupPasswordHandling();
                 document.getElementById('processWeekBtn').addEventListener('click', processSelectedWeek);
-                
+                setupSecurity();
                 debugLog('Application initialized successfully');
                 
             } catch (error) {
-                debugLog('Error initializing application: ' + error.message);
-                enableDebugMode();
-                showError('Failed to initialize application. Check debug console for details.');
+                handleFatalError('Error initializing application: ' + error.message);
             }
         });
 
-        // Security Enhancements
-        document.addEventListener('contextmenu', function(e) {
-            e.preventDefault();
-        });
-
-        document.addEventListener('keydown', function(e) {
-            if (e.keyCode === 123) e.preventDefault();
-            if (e.ctrlKey && e.shiftKey && e.keyCode === 73) e.preventDefault();
-            if (e.ctrlKey && e.shiftKey && e.keyCode === 74) e.preventDefault();
-            if (e.ctrlKey && e.keyCode === 85) e.preventDefault();
-            
-            // Enable debug mode with Ctrl+Shift+D
-            if (e.ctrlKey && e.shiftKey && e.keyCode === 68) {
-                enableDebugMode();
-            }
-        });
+        function setupSecurity() {
+            document.addEventListener('contextmenu', e => e.preventDefault());
+            document.addEventListener('keydown', function(e) {
+                if (e.keyCode === 123 || (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74)) || (e.ctrlKey && e.keyCode === 85)) {
+                    e.preventDefault();
+                }
+                if (e.ctrlKey && e.shiftKey && e.keyCode === 68) {
+                    enableDebugMode();
+                }
+            });
+        }
 
         function setupPasswordHandling() {
             const passwordOverlay = document.getElementById('passwordOverlay');
@@ -748,9 +708,8 @@
             const passwordSubmitBtn = document.getElementById('passwordSubmit');
             const passwordError = document.getElementById('passwordError');
 
-            function checkPassword() {
-                const correctPassword = 'EdgingClearly';
-                if (passwordInput.value === correctPassword) {
+            const checkPassword = () => {
+                if (passwordInput.value === 'EdgingClearly') {
                     passwordOverlay.style.display = 'none';
                     mainContent.style.display = 'block';
                     debugLog('Password authenticated successfully');
@@ -758,102 +717,50 @@
                     passwordError.style.display = 'block';
                     passwordInput.value = '';
                     debugLog('Invalid password attempt');
-                    setTimeout(() => {
-                        passwordError.style.display = 'none';
-                    }, 3000);
+                    setTimeout(() => { passwordError.style.display = 'none'; }, 3000);
                 }
-            }
+            };
 
             passwordSubmitBtn.addEventListener('click', checkPassword);
-            passwordInput.addEventListener('keypress', function(event) {
-                if (event.key === 'Enter') {
-                    checkPassword();
-                }
-            });
-
+            passwordInput.addEventListener('keypress', e => { if (e.key === 'Enter') checkPassword(); });
             passwordInput.focus();
         }
 
+        // --- FILE HANDLING ---
         function handleCSVUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
-
-            debugLog('CSV file selected: ' + file.name);
+            debugLog(`Betting lines CSV selected: ${file.name}`);
 
             const reader = new FileReader();
             reader.onload = function(e) {
                 try {
                     const csvText = e.target.result;
-                    debugLog('CSV content length: ' + csvText.length + ' characters');
-                    
                     const lines = csvText.split('\n');
-                    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-                    debugLog('CSV headers: ' + headers.join(', '));
+                    const headers = lines.shift().split(',').map(h => h.trim().replace(/"/g, ''));
                     
-                    csvData = [];
-                    for (let i = 1; i < lines.length; i++) {
-                        if (lines[i].trim()) {
-                            const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
-                            const row = {};
-                            headers.forEach((header, index) => {
-                                row[header] = values[index];
-                            });
-                            csvData.push(row);
-                        }
-                    }
+                    csvData = lines.map(line => {
+                        if (!line.trim()) return null;
+                        const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+                        const row = {};
+                        headers.forEach((header, index) => { row[header] = values[index]; });
+                        return row;
+                    }).filter(Boolean); // Filter out any null rows
 
-                    debugLog('Total CSV rows parsed: ' + csvData.length);
-
-                    // Get unique weeks
-                    const weeks = [...new Set(csvData.map(row => parseInt(row.week)))].sort((a, b) => a - b);
-                    debugLog('Weeks found: ' + weeks.join(', '));
-                    
-                    // Filter for only "Over" bets to get unique player count
-                    const overBets = csvData.filter(row => row.bet_type === 'Over');
-                    const uniquePlayers = [...new Set(overBets.map(row => row.player_name))].length;
-                    
-                    debugLog('Over bets found: ' + overBets.length);
-                    debugLog('Unique players: ' + uniquePlayers);
-                    
-                    // Update stats display
-                    document.getElementById('csvStatsText').textContent = 
-                        `${overBets.length} betting lines found across ${weeks.length} weeks (${uniquePlayers} unique players)`;
-                    document.getElementById('csvStats').style.display = 'block';
-                    
-                    // Populate week selector
-                    const weekSelect = document.getElementById('weekSelect');
-                    weekSelect.innerHTML = '<option value="">Choose a week...</option>';
-                    weeks.forEach(week => {
-                        const weekCount = overBets.filter(row => parseInt(row.week) === week).length;
-                        const option = document.createElement('option');
-                        option.value = week;
-                        option.textContent = `Week ${week} (${weekCount} players)`;
-                        weekSelect.appendChild(option);
-                    });
-
-                    document.getElementById('weekSelectorContainer').style.display = 'block';
-                    
-                    weekSelect.addEventListener('change', function() {
-                        const processBtn = document.getElementById('processWeekBtn');
-                        processBtn.disabled = !this.value;
-                        debugLog('Week selected: ' + this.value);
-                    });
-
+                    debugLog(`Total betting lines parsed: ${csvData.length}`);
+                    updateUI_AfterCSVLoad();
                 } catch (error) {
-                    debugLog('Error parsing CSV: ' + error.message);
-                    enableDebugMode();
-                    showError('Error parsing CSV file. Please check the format.');
+                    handleFatalError('Error parsing betting lines CSV: ' + error.message);
                 }
             };
             reader.readAsText(file);
         }
 
-        // NEW: Function to handle gamelog CSV upload
         function handleGamelogUpload(event) {
             const file = event.target.files[0];
             if (!file || weekResults.length === 0) return;
 
-            debugLog('Gamelog CSV selected: ' + file.name);
+            debugLog(`Gamelog CSV selected: ${file.name}`);
             const reader = new FileReader();
             reader.onload = function(e) {
                 try {
@@ -871,534 +778,243 @@
                             }
                         }
                     });
-
                     debugLog(`Gamelog parsed. ${gamelogData.size} entries found.`);
-
-                    // Merge gamelog data into weekResults
-                    weekResults.forEach(result => {
-                        if (gamelogData.has(result.player_name)) {
-                            result.actual_yards = gamelogData.get(result.player_name);
-                            // Determine bet outcome (assuming 'Over' bet)
-                            if (result.actual_yards > result.betting_line) {
-                                result.bet_outcome = 'WIN';
-                            } else if (result.actual_yards < result.betting_line) {
-                                result.bet_outcome = 'LOSS';
-                            } else {
-                                result.bet_outcome = 'PUSH';
-                            }
-                        }
-                    });
-
-                    // Re-render the detailed results table with the new data
-                    renderDetailedResultsTable(weekResults);
-                    showSuccess('Gamelog data loaded and results updated!');
+                    
+                    mergeGamelogData();
+                    renderDetailedResultsTable(weekResults); // Re-render table with actuals
+                    showSuccess('Gamelog loaded. Audit results are updated.');
 
                 } catch (error) {
-                    debugLog('Error parsing gamelog CSV: ' + error.message);
                     showError('Error parsing gamelog file. Ensure format is "player_name,yards".');
+                    debugLog(error.message);
                 }
             };
             reader.readAsText(file);
         }
 
-        function normalizeTeamName(input) {
-            const teamMapping = {
-                'ARI': 'Arizona Cardinals', 'ATL': 'Atlanta Falcons', 'BAL': 'Baltimore Ravens',
-                'BUF': 'Buffalo Bills', 'CAR': 'Carolina Panthers', 'CHI': 'Chicago Bears',
-                'CIN': 'Cincinnati Bengals', 'CLE': 'Cleveland Browns', 'DAL': 'Dallas Cowboys',
-                'DEN': 'Denver Broncos', 'DET': 'Detroit Lions', 'GB': 'Green Bay Packers',
-                'HOU': 'Houston Texans', 'IND': 'Indianapolis Colts', 'JAX': 'Jacksonville Jaguars',
-                'KC': 'Kansas City Chiefs', 'LV': 'Las Vegas Raiders', 'LAC': 'Los Angeles Chargers',
-                'LAR': 'Los Angeles Rams', 'MIA': 'Miami Dolphins', 'MIN': 'Minnesota Vikings',
-                'NE': 'New England Patriots', 'NO': 'New Orleans Saints', 'NYG': 'New York Giants',
-                'NYJ': 'New York Jets', 'PHI': 'Philadelphia Eagles', 'PIT': 'Pittsburgh Steelers',
-                'SF': 'San Francisco 49ers', 'SEA': 'Seattle Seahawks', 'TB': 'Tampa Bay Buccaneers',
-                'TEN': 'Tennessee Titans', 'WAS': 'Washington Commanders'
-            };
-            
-            const upperInput = input.trim().toUpperCase();
-            if (teamMapping[upperInput]) {
-                return teamMapping[upperInput];
-            }
-            
-            for (const fullName of Object.values(teamMapping)) {
-                if (input.trim().toLowerCase() === fullName.toLowerCase()) {
-                    return fullName;
-                }
-            }
-            
-            return input.trim();
-        }
-
-        function getOpponentTeam(playerTeam, homeTeam, awayTeam) {
-            if (playerTeam === homeTeam) {
-                return awayTeam;
-            } else if (playerTeam === awayTeam) {
-                return homeTeam;
-            } else {
-                if (homeTeam.includes(playerTeam) || playerTeam.includes(homeTeam)) {
-                    return awayTeam;
-                } else {
-                    return homeTeam;
-                }
-            }
-        }
-
+        // --- CORE LOGIC & PROCESSING ---
         async function processSelectedWeek() {
-            const selectedWeek = document.getElementById('weekSelect').value;
-            if (!selectedWeek || !csvData) {
+            currentWeek = document.getElementById('weekSelect').value;
+            if (!currentWeek || !csvData) {
                 showError('Please select a week to process.');
                 return;
             }
 
-            debugLog('Starting processing for Week ' + selectedWeek);
-            currentWeek = selectedWeek;
-            gamelogData.clear(); // Clear old gamelog data
+            debugLog(`Starting processing for Week ${currentWeek}`);
+            resetForNewWeek();
 
-            // Filter data for selected week and only "Over" bets
             const weekData = csvData.filter(row => 
-                parseInt(row.week) === parseInt(selectedWeek) && 
-                row.bet_type === 'Over'
+                parseInt(row.week) === parseInt(currentWeek) && row.bet_type === 'Over'
             );
-
-            debugLog('Filtered week data: ' + weekData.length + ' players');
-
             if (weekData.length === 0) {
-                showError(`No "Over" betting data found for Week ${selectedWeek}.`);
+                showError(`No "Over" betting data found for Week ${currentWeek}.`);
                 return;
             }
 
-            showLoading(true);
-            hideAllMessages();
-            
-            const progressContainer = document.getElementById('weekProgress');
-            const progressFill = document.getElementById('progressFill');
-            const progressText = document.getElementById('progressText');
-            
-            progressContainer.style.display = 'block';
-            weekResults = [];
-
-            let processedCount = 0;
-            let successCount = 0;
-            let errorCount = 0;
+            showLoading(true, 'Processing week data...');
             const totalCount = weekData.length;
+            let successCount = 0, errorCount = 0;
 
-            for (let i = 0; i < weekData.length; i++) {
-                const row = weekData[i];
-                
-                // Update progress
-                const progressPercent = (processedCount / totalCount) * 100;
-                progressFill.style.width = `${progressPercent}%`;
-                progressText.textContent = `Processing ${processedCount + 1} of ${totalCount}: ${row.player_name}`;
-
+            for (let i = 0; i < totalCount; i++) {
+                updateProgress(i, totalCount, weekData[i].player_name);
                 try {
-                    debugLog(`Processing player ${processedCount + 1}/${totalCount}: ${row.player_name}`);
-                    const result = await processPlayer(row);
+                    const result = await processPlayer(weekData[i]);
                     if (result) {
                         weekResults.push(result);
                         successCount++;
-                        debugLog(`✓ Successfully processed ${row.player_name}`);
-                    } else {
-                        errorCount++;
-                        debugLog(`✗ Failed to process ${row.player_name} (no result returned)`);
-                    }
+                    } else { errorCount++; }
                 } catch (error) {
                     errorCount++;
-                    debugLog(`✗ Error processing ${row.player_name}: ${error.message}`);
+                    debugLog(`CRITICAL ERROR for ${weekData[i].player_name}: ${error.message}`);
                 }
-
-                processedCount++;
-                
-                // Small delay to prevent overwhelming the database
-                await new Promise(resolve => setTimeout(resolve, 100));
+                await new Promise(resolve => setTimeout(resolve, 50)); // Prevent rate limiting
             }
 
-            // Complete progress
-            progressFill.style.width = '100%';
-            progressText.textContent = `Week ${selectedWeek} processing complete! (${successCount} successful, ${errorCount} errors)`;
-
-            debugLog(`Processing complete: ${successCount} successful, ${errorCount} errors`);
-
+            updateProgress(totalCount, totalCount, 'Complete');
             showLoading(false);
-            
+
             if (successCount > 0) {
+                debugLog(`Processing complete: ${successCount} successful, ${errorCount} errors`);
                 displayWeekResults();
             } else {
-                enableDebugMode();
-                showError(`No valid projections generated for Week ${selectedWeek}. Check debug console for details.`);
+                handleFatalError(`No valid projections generated for Week ${currentWeek}.`);
             }
         }
 
-        async function processPlayer(csvRow) {
-            const playerName = csvRow.player_name;
-            const bettingLine = parseFloat(csvRow.line);
-            const odds = parseInt(csvRow.odds);
-            const homeTeam = normalizeTeamName(csvRow.home_team);
-            const awayTeam = normalizeTeamName(csvRow.away_team);
-
-            debugLog(`Processing ${playerName}: Line=${bettingLine}, HomeTeam=${homeTeam}, AwayTeam=${awayTeam}`);
-
+        async function processPlayer(row) {
+            const { player_name, line, odds, home_team, away_team } = row;
             try {
-                // Test Supabase connection first
-                if (!supabaseClient) {
-                    throw new Error('Supabase client not initialized');
-                }
+                const { data: playerData, error: pErr } = await supabaseClient.from('player_cover_stats').select('team, tprr_player, routes_run, g, separation_score').eq('player_name', player_name).eq('season', SEASON).eq('coverage_type', 'Overall').single();
+                if (pErr || !playerData) throw new Error(`Player data not found for ${player_name}`);
 
-                // Get player's team and stats from player_cover_stats
-                debugLog(`Querying player data for: ${playerName}`);
-                const { data: playerData, error: playerError } = await supabaseClient
-                    .from('player_cover_stats')
-                    .select('team, tprr_player, routes_run, g, separation_score')
-                    .eq('player_name', playerName)
-                    .eq('season', SEASON)
-                    .eq('coverage_type', 'Overall')
-                    .limit(1);
+                const { data: yptData, error: yErr } = await supabaseClient.from('nfl_wr_general_stats').select('yards_per_target').eq('player_name', player_name).eq('season', SEASON).single();
+                if (yErr || !yptData) throw new Error(`YPT data not found for ${player_name}`);
 
-                if (playerError) {
-                    debugLog(`Database error for ${playerName}: ${playerError.message}`);
-                    throw new Error(`Database error: ${playerError.message}`);
-                }
-
-                if (!playerData || playerData.length === 0) {
-                    debugLog(`No player data found for: ${playerName}`);
-                    return null;
-                }
-
-                const playerTeam = playerData[0].team;
+                const playerTeam = playerData.team;
+                const opponentTeam = getOpponentTeam(playerTeam, normalizeTeamName(home_team), normalizeTeamName(away_team));
+                const routesPerGame = playerData.routes_run && playerData.g ? (playerData.routes_run / playerData.g) : 35;
                 
-                // Get yards_per_target from nfl_wr_general_stats
-                debugLog(`Querying yards per target for: ${playerName}`);
-                const { data: yptData, error: yptError } = await supabaseClient
-                    .from('nfl_wr_general_stats')
-                    .select('yards_per_target')
-                    .eq('player_name', playerName)
-                    .eq('season', SEASON)
-                    .limit(1);
-
-                if (yptError) {
-                    debugLog(`YPT Database error for ${playerName}: ${yptError.message}`);
-                    throw new Error(`YPT Database error: ${yptError.message}`);
-                }
-
-                if (!yptData || yptData.length === 0) {
-                    debugLog(`No YPT data found for: ${playerName}`);
-                    return null;
-                }
-
-                const baseYPT = yptData[0].yards_per_target;
-                debugLog(`Base YPT for ${playerName}: ${baseYPT}`);
-
-                const opponentTeam = getOpponentTeam(playerTeam, homeTeam, awayTeam);
+                const projection = await calculateReceivingYardsProjection(player_name, playerTeam, opponentTeam, routesPerGame, yptData.yards_per_target);
+                if (!projection) return null;
                 
-                debugLog(`${playerName} plays for ${playerTeam} vs ${opponentTeam}`);
+                const edge = projection.expectedYards - parseFloat(line);
+                const recommendation = getRecommendation(edge);
 
-                // Default game flow (neutral)
-                const gameFlow = 3;
-                
-                // Calculate routes per game
-                const routesPerGame = playerData[0].routes_run && playerData[0].g ? 
-                    (playerData[0].routes_run / playerData[0].g) : 35;
-
-                debugLog(`Routes per game: ${routesPerGame}`);
-
-                // Get weighted stats and calculate projection
-                const projection = await calculateReceivingYardsProjection(
-                    playerName, 
-                    playerTeam, 
-                    opponentTeam, 
-                    gameFlow, 
-                    routesPerGame,
-                    baseYPT
-                );
-
-                if (!projection) {
-                    debugLog(`No projection generated for ${playerName}`);
-                    return null;
-                }
-
-                debugLog(`Projection for ${playerName}: ${projection.expectedYards} yards`);
-
-                // Calculate edge and recommendation
-                const edgeDifference = projection.expectedYards - bettingLine;
-                let recommendation = 'PASS';
-                
-                if (Math.abs(edgeDifference) >= 15) {
-                    recommendation = edgeDifference > 0 ? 'GREAT OVER' : 'GREAT UNDER';
-                } else if (Math.abs(edgeDifference) >= 6) {
-                    recommendation = edgeDifference > 0 ? 'MODERATE OVER' : 'MODERATE UNDER';
-                }
-
-                debugLog(`${playerName} recommendation: ${recommendation} (edge: ${edgeDifference.toFixed(1)})`);
-
-                return {
-                    week: csvRow.week,
-                    player_name: playerName,
-                    team: playerTeam,
-                    opponent: opponentTeam,
-                    betting_line: bettingLine,
-                    odds: odds,
-                    projection: projection.expectedYards,
-                    edge: edgeDifference.toFixed(1),
-                    recommendation: recommendation,
-                    target_share: projection.targetShare,
-                    weighted_tprr: projection.weightedTPRR,
-                    base_ypt: projection.baseYPT,
-                    separation_score: projection.separationScore
-                };
-
+                return { week: currentWeek, player_name, team: playerTeam, opponent: opponentTeam, betting_line: parseFloat(line), odds: parseInt(odds), projection: projection.expectedYards, edge: edge.toFixed(1), recommendation, ...projection.debugStats };
             } catch (error) {
-                debugLog(`Error processing ${playerName}: ${error.message}`);
-                throw error;
+                debugLog(`Failed to process ${player_name}: ${error.message}`);
+                return null;
             }
         }
 
-        async function calculateReceivingYardsProjection(playerName, playerTeam, opponentTeam, gameFlow, routesPerGame, baseYPT) {
-            try {
-                debugLog(`Calculating projection for ${playerName} with base YPT: ${baseYPT}`);
+        async function calculateReceivingYardsProjection(playerName, playerTeam, opponentTeam, routesPerGame, baseYPT) {
+            const { data: oppCov, error: cErr } = await supabaseClient.from('defensive_coverages').select('*').eq('team_name', opponentTeam).eq('season', SEASON).single();
+            if (cErr || !oppCov) throw new Error(`Coverage data not found for ${opponentTeam}`);
 
-                // Get player's overall stats for target share (TPRR only, no YPT needed here)
-                const { data: playerData, error: playerError } = await supabaseClient
-                    .from('player_cover_stats')
-                    .select('tprr_player, separation_score, routes_run, g')
-                    .eq('player_name', playerName)
-                    .eq('team', playerTeam)
-                    .eq('season', SEASON)
-                    .eq('coverage_type', 'Overall')
-                    .limit(1);
-
-                if (playerError) {
-                    debugLog(`Error getting player overall stats: ${playerError.message}`);
-                    throw new Error(`Player stats error: ${playerError.message}`);
-                }
-
-                if (!playerData || playerData.length === 0) {
-                    debugLog(`No overall stats found for ${playerName}`);
-                    throw new Error(`Player "${playerName}" not found.`);
-                }
-
-                const targetShare = (playerData[0].tprr_player * 100);
-                debugLog(`Target share for ${playerName}: ${targetShare.toFixed(1)}%`);
-
-                // Get opponent's coverage frequencies
-                debugLog(`Getting coverage data for ${opponentTeam}`);
-                const { data: coverageData, error: coverageError } = await supabaseClient
-                    .from('defensive_coverages')
-                    .select('*')
-                    .eq('team_name', opponentTeam)
-                    .eq('season', SEASON)
-                    .limit(1);
-
-                if (coverageError) {
-                    debugLog(`Error getting coverage data: ${coverageError.message}`);
-                    throw new Error(`Coverage data error: ${coverageError.message}`);
-                }
-
-                if (!coverageData || coverageData.length === 0) {
-                    debugLog(`No coverage data found for ${opponentTeam}`);
-                    throw new Error(`No coverage data found for ${opponentTeam}.`);
-                }
-
-                const coverage = coverageData[0];
-                
-                const coverageTypes = [
-                    { name: 'Man Coverage', pct: coverage.man_pct },
-                    { name: 'Cover 2', pct: coverage.cover_2_pct },
-                    { name: 'Cover 3', pct: coverage.cover_3_pct },
-                    { name: 'Cover 4', pct: coverage.cover_4_pct },
-                    { name: 'Cover 6', pct: coverage.cover_6_pct }
-                ];
-
-                debugLog(`Coverage breakdown for ${opponentTeam}: Man=${coverage.man_pct}%, C2=${coverage.cover_2_pct}%, C3=${coverage.cover_3_pct}%`);
-
-                // Get player stats for all coverage types (TPRR only, no YPT per coverage)
-                debugLog(`Getting detailed coverage stats for ${playerName}`);
-                const { data: playerStats, error: statsError } = await supabaseClient
-                    .from('player_cover_stats')
-                    .select('coverage_type, tprr_player, separation_score')
-                    .eq('player_name', playerName)
-                    .eq('team', playerTeam)
-                    .eq('season', SEASON)
-                    .in('coverage_type', ['Man Coverage', 'Cover 2', 'Cover 3', 'Cover 4', 'Cover 6']);
-
-                if (statsError) {
-                    debugLog(`Error getting coverage stats: ${statsError.message}`);
-                    throw new Error(`Coverage stats error: ${statsError.message}`);
-                }
-
-                if (!playerStats || playerStats.length === 0) {
-                    debugLog(`No detailed coverage stats found for ${playerName}`);
-                    throw new Error(`No detailed coverage stats found for ${playerName}.`);
-                }
-
-                debugLog(`Found ${playerStats.length} coverage stats for ${playerName}`);
-
-                // Calculate weighted TPRR and separation scores (YPT is constant from general stats)
-                let weightedTPRR = 0;
-                let weightedSeparation = 0;
-                let totalWeight = 0;
-
-                coverageTypes.forEach(coverage => {
-                    if (coverage.pct > 0) {
-                        const playerStat = playerStats.find(s => s.coverage_type === coverage.name);
-                        if (playerStat) {
-                            const weight = coverage.pct / 100;
-                            weightedTPRR += (playerStat.tprr_player) * weight;
-                            weightedSeparation += (playerStat.separation_score || 0.2) * weight;
-                            totalWeight += weight;
-                            debugLog(`${coverage.name}: weight=${weight.toFixed(2)}, TPRR=${playerStat.tprr_player}`);
-                        }
-                    }
-                });
-
-                if (totalWeight === 0) {
-                    debugLog(`No valid coverage weights for ${playerName}`);
-                    throw new Error(`No valid coverage data found for ${playerName}.`);
-                }
-
-                weightedTPRR = weightedTPRR / totalWeight;
-                weightedSeparation = weightedSeparation / totalWeight;
-
-                debugLog(`Weighted stats - TPRR: ${weightedTPRR.toFixed(4)}, Base YPT: ${baseYPT}, Separation: ${weightedSeparation.toFixed(3)}`);
-
-                // Calculate receiving yards projection using your formula
-                const result = calculateReceivingYardsScore(
-                    weightedTPRR,
-                    baseYPT,
-                    weightedSeparation,
-                    routesPerGame,
-                    gameFlow
-                );
-
-                debugLog(`Final projection: ${result.expectedYards} yards`);
-
-                return {
-                    expectedYards: result.expectedYards,
-                    targetShare: targetShare.toFixed(1),
-                    weightedTPRR: weightedTPRR.toFixed(4),
-                    baseYPT: baseYPT,
-                    separationScore: weightedSeparation.toFixed(3)
-                };
-
-            } catch (error) {
-                debugLog(`Error in calculateReceivingYardsProjection: ${error.message}`);
-                throw error;
-            }
-        }
-
-        function calculateReceivingYardsScore(weightedTPRR, baseYPT, weightedSeparation, routesPerGame, gameFlow) {
-            debugLog(`Calculating score with: TPRR=${weightedTPRR}, Base YPT=${baseYPT}, Sep=${weightedSeparation}, Routes=${routesPerGame}`);
+            const { data: playerStats, error: sErr } = await supabaseClient.from('player_cover_stats').select('coverage_type, tprr_player, separation_score').eq('player_name', playerName).eq('team', playerTeam).eq('season', SEASON);
+            if (sErr || !playerStats || playerStats.length === 0) throw new Error(`Detailed coverage stats not found for ${playerName}`);
             
-            // === YOUR EXACT FORMULA ===
-            
-            // Step 4: Calculate Expected Targets
-            const expectedTargets = routesPerGame * weightedTPRR;
-            debugLog(`Step 4 - Expected Targets: ${expectedTargets.toFixed(2)}`);
-            
-            // Step 5: Calculate Adjusted YPT
+            const playerStatsMap = new Map(playerStats.map(s => [s.coverage_type, s]));
+            const coverageTypes = [{ n: 'Man Coverage', p: oppCov.man_pct }, { n: 'Cover 2', p: oppCov.cover_2_pct }, { n: 'Cover 3', p: oppCov.cover_3_pct }, { n: 'Cover 4', p: oppCov.cover_4_pct }, { n: 'Cover 6', p: oppCov.cover_6_pct }];
+
+            let weightedTPRR = 0, weightedSeparation = 0, totalWeight = 0;
+            coverageTypes.forEach(cov => {
+                const stat = playerStatsMap.get(cov.n);
+                if (cov.p > 0 && stat) {
+                    const weight = cov.p / 100;
+                    weightedTPRR += (stat.tprr_player || 0) * weight;
+                    weightedSeparation += (stat.separation_score || 0.2) * weight;
+                    totalWeight += weight;
+                }
+            });
+
+            if (totalWeight === 0) throw new Error('Could not calculate weighted stats due to missing coverage data.');
+            weightedTPRR /= totalWeight;
+            weightedSeparation /= totalWeight;
+
             const separationBonus = Math.max(0, (weightedSeparation - 0.15) * 10);
             const adjustedYPT = baseYPT + separationBonus;
-            debugLog(`Step 5 - Separation Bonus: ${separationBonus.toFixed(2)}, Adjusted YPT: ${adjustedYPT.toFixed(2)}`);
-            
-            // Step 6: Apply Game Script
-            const gameScriptMultiplier = 0.85 + (gameFlow * 0.075);
-            debugLog(`Step 6 - Game Script Multiplier: ${gameScriptMultiplier.toFixed(3)}`);
-            
-            // Step 7: Final Yards Projection
+            const gameScriptMultiplier = 0.85 + (3 * 0.075); // Neutral game flow
+            const expectedTargets = routesPerGame * weightedTPRR;
             const expectedYards = expectedTargets * adjustedYPT * gameScriptMultiplier;
-            debugLog(`Step 7 - Final Expected Yards: ${expectedYards.toFixed(1)}`);
-            
+
             return {
-                expectedYards: parseFloat(expectedYards.toFixed(1))
+                expectedYards: parseFloat(expectedYards.toFixed(1)),
+                debugStats: {
+                    target_share: (playerStatsMap.get('Overall')?.tprr_player * 100 || 0).toFixed(1),
+                    weighted_tprr: weightedTPRR.toFixed(4),
+                    base_ypt: baseYPT,
+                    separation_score: weightedSeparation.toFixed(3)
+                }
             };
+        }
+
+        function mergeGamelogData() {
+            weekResults.forEach(result => {
+                if (gamelogData.has(result.player_name)) {
+                    const actualYards = gamelogData.get(result.player_name);
+                    result.actual_yards = actualYards;
+                    if (actualYards > result.betting_line) result.bet_outcome = 'WIN';
+                    else if (actualYards < result.betting_line) result.bet_outcome = 'LOSS';
+                    else result.bet_outcome = 'PUSH';
+                }
+            });
+        }
+        
+        // --- UI & DISPLAY ---
+        function updateUI_AfterCSVLoad() {
+            const overBets = csvData.filter(row => row.bet_type === 'Over');
+            const weeks = [...new Set(csvData.map(row => parseInt(row.week)))].sort((a, b) => a - b);
+            const uniquePlayers = new Set(overBets.map(row => row.player_name)).size;
+            
+            document.getElementById('csvStatsText').textContent = `${overBets.length} betting lines found across ${weeks.length} weeks (${uniquePlayers} unique players)`;
+            document.getElementById('csvStats').style.display = 'block';
+            
+            const weekSelect = document.getElementById('weekSelect');
+            weekSelect.innerHTML = '<option value="">Choose a week...</option>';
+            weeks.forEach(week => {
+                const weekCount = overBets.filter(row => parseInt(row.week) === week).length;
+                const option = document.createElement('option');
+                option.value = week;
+                option.textContent = `Week ${week} (${weekCount} players)`;
+                weekSelect.appendChild(option);
+            });
+
+            document.getElementById('weekSelectorContainer').style.display = 'block';
+            weekSelect.onchange = () => { document.getElementById('processWeekBtn').disabled = !weekSelect.value; };
         }
 
         function displayWeekResults() {
-            if (weekResults.length === 0) {
-                showError(`No valid projections generated for Week ${currentWeek}.`);
-                return;
-            }
+            const recCounts = weekResults.reduce((acc, result) => {
+                acc[result.recommendation] = (acc[result.recommendation] || 0) + 1;
+                return acc;
+            }, {});
+            const totalActionable = (recCounts['GREAT OVER'] || 0) + (recCounts['MODERATE OVER'] || 0) + (recCounts['GREAT UNDER'] || 0) + (recCounts['MODERATE UNDER'] || 0);
 
-            debugLog(`Displaying results for ${weekResults.length} players`);
+            document.getElementById('weekResultTitle').textContent = `Week ${currentWeek} Audit Results`;
+            document.getElementById('weekResultSummary').textContent = `${weekResults.length} players processed with ${totalActionable} actionable recommendations.`;
 
-            // Calculate recommendation counts
-            const recCounts = {
-                'GREAT OVER': 0, 'MODERATE OVER': 0, 'PASS': 0,
-                'MODERATE UNDER': 0, 'GREAT UNDER': 0
-            };
-            weekResults.forEach(result => {
-                recCounts[result.recommendation]++;
-            });
-
-            debugLog(`Recommendation counts: ${JSON.stringify(recCounts)}`);
-
-            // Update UI
-            document.getElementById('weekResultTitle').textContent = `Week ${currentWeek} Results`;
-            document.getElementById('weekResultSummary').textContent = 
-                `${weekResults.length} players processed with ${recCounts['GREAT OVER'] + recCounts['MODERATE OVER'] + recCounts['GREAT UNDER'] + recCounts['MODERATE UNDER']} actionable recommendations`;
-
-            const recommendationsGrid = document.getElementById('recommendationsGrid');
-            recommendationsGrid.innerHTML = `
-                <div class="recommendation-stat"><span class="count">${recCounts['GREAT OVER']}</span><span class="label">Great Over</span></div>
-                <div class="recommendation-stat"><span class="count">${recCounts['MODERATE OVER']}</span><span class="label">Moderate Over</span></div>
-                <div class="recommendation-stat"><span class="count">${recCounts['PASS']}</span><span class="label">Pass</span></div>
-                <div class="recommendation-stat"><span class="count">${recCounts['MODERATE UNDER']}</span><span class="label">Moderate Under</span></div>
-                <div class="recommendation-stat"><span class="count">${recCounts['GREAT UNDER']}</span><span class="label">Great Under</span></div>
-            `;
+            const grid = document.getElementById('recommendationsGrid');
+            grid.innerHTML = `
+                <div class="recommendation-stat"><span class="count">${recCounts['GREAT OVER'] || 0}</span><span class="label">Great Over</span></div>
+                <div class="recommendation-stat"><span class="count">${recCounts['MODERATE OVER'] || 0}</span><span class="label">Moderate Over</span></div>
+                <div class="recommendation-stat"><span class="count">${recCounts['PASS'] || 0}</span><span class="label">Pass</span></div>
+                <div class="recommendation-stat"><span class="count">${recCounts['MODERATE UNDER'] || 0}</span><span class="label">Moderate Under</span></div>
+                <div class="recommendation-stat"><span class="count">${recCounts['GREAT UNDER'] || 0}</span><span class="label">Great Under</span></div>`;
             
-            // Render the detailed results table
             renderDetailedResultsTable(weekResults);
-
-            // Hide progress and show results elements
-            document.getElementById('weekProgress').style.display = 'none';
-            document.getElementById('weekResults').style.display = 'block';
-            document.getElementById('gamelogUploadContainer').style.display = 'block';
-
-            showSuccess(`Week ${currentWeek} processing complete! ${weekResults.length} projections generated.`);
+            
+            document.getElementById('weekResults').style.display = 'block'; // This shows the entire results container including the gamelog uploader
+            showSuccess(`Week ${currentWeek} processing complete! Ready for audit.`);
         }
-
-        // NEW: Renders the detailed results into an HTML table
+        
         function renderDetailedResultsTable(resultsData) {
             const container = document.getElementById('detailedResultsContainer');
-            container.innerHTML = ''; // Clear previous results
-
-            if (resultsData.length === 0) return;
+            container.innerHTML = ''; 
 
             const table = document.createElement('table');
             table.className = 'results-table';
-            
-            const thead = table.createTHead();
-            const headerRow = thead.insertRow();
+            const hasActuals = resultsData[0]?.hasOwnProperty('actual_yards');
             
             const headers = ['Player', 'Team', 'Opp', 'Line', 'Proj.', 'Edge', 'Rec.'];
-            const hasActuals = resultsData[0].hasOwnProperty('actual_yards');
-            if (hasActuals) {
-                headers.push('Actual');
-                headers.push('Outcome');
-            }
+            if (hasActuals) headers.push('Actual', 'Outcome');
             
-            headers.forEach(text => {
-                const th = document.createElement('th');
-                th.textContent = text;
-                headerRow.appendChild(th);
-            });
+            table.createTHead().insertRow().innerHTML = headers.map(h => `<th>${h}</th>`).join('');
 
             const tbody = table.createTBody();
-            resultsData.forEach(result => {
+            resultsData.forEach(r => {
                 const row = tbody.insertRow();
-                row.innerHTML = `
-                    <td>${result.player_name}</td>
-                    <td>${result.team}</td>
-                    <td>${result.opponent}</td>
-                    <td>${result.betting_line.toFixed(1)}</td>
-                    <td>${result.projection.toFixed(1)}</td>
-                    <td>${result.edge}</td>
-                    <td>${result.recommendation}</td>
-                    ${hasActuals ? `<td>${result.actual_yards !== undefined ? result.actual_yards.toFixed(1) : 'N/A'}</td>` : ''}
-                    ${hasActuals ? `<td class="${(result.bet_outcome || '').toLowerCase()}">${result.bet_outcome || 'N/A'}</td>` : ''}
-                `;
+                let cells = `
+                    <td>${r.player_name}</td><td>${r.team}</td><td>${r.opponent}</td>
+                    <td>${r.betting_line.toFixed(1)}</td><td>${r.projection.toFixed(1)}</td>
+                    <td>${r.edge}</td><td>${r.recommendation}</td>`;
+                if (hasActuals) {
+                    cells += `
+                        <td>${r.actual_yards !== undefined ? r.actual_yards.toFixed(1) : 'N/A'}</td>
+                        <td class="${(r.bet_outcome || '').toLowerCase()}">${r.bet_outcome || 'N/A'}</td>`;
+                }
+                row.innerHTML = cells;
             });
 
             container.appendChild(table);
+        }
+
+        // --- UTILITY & HELPER FUNCTIONS ---
+        function getRecommendation(edge) {
+            if (edge >= 15) return 'GREAT OVER';
+            if (edge >= 6) return 'MODERATE OVER';
+            if (edge <= -15) return 'GREAT UNDER';
+            if (edge <= -6) return 'MODERATE UNDER';
+            return 'PASS';
+        }
+        
+        function normalizeTeamName(input) {
+            const map = {'ARI':'Arizona Cardinals','ATL':'Atlanta Falcons','BAL':'Baltimore Ravens','BUF':'Buffalo Bills','CAR':'Carolina Panthers','CHI':'Chicago Bears','CIN':'Cincinnati Bengals','CLE':'Cleveland Browns','DAL':'Dallas Cowboys','DEN':'Denver Broncos','DET':'Detroit Lions','GB':'Green Bay Packers','HOU':'Houston Texans','IND':'Indianapolis Colts','JAX':'Jacksonville Jaguars','KC':'Kansas City Chiefs','LV':'Las Vegas Raiders','LAC':'Los Angeles Chargers','LAR':'Los Angeles Rams','MIA':'Miami Dolphins','MIN':'Minnesota Vikings','NE':'New England Patriots','NO':'New Orleans Saints','NYG':'New York Giants','NYJ':'New York Jets','PHI':'Philadelphia Eagles','PIT':'Pittsburgh Steelers','SF':'San Francisco 49ers','SEA':'Seattle Seahawks','TB':'Tampa Bay Buccaneers','TEN':'Tennessee Titans','WAS':'Washington Commanders'};
+            return map[input.trim().toUpperCase()] || Object.values(map).find(v => v.toLowerCase() === input.trim().toLowerCase()) || input.trim();
+        }
+
+        function getOpponentTeam(playerTeam, homeTeam, awayTeam) {
+            return playerTeam === homeTeam ? awayTeam : homeTeam;
         }
 
         function downloadResults() {
@@ -1406,62 +1022,46 @@
                 showError('No results to download.');
                 return;
             }
-
-            debugLog(`Downloading results for ${weekResults.length} players`);
-
-            // Create CSV content
-            const hasActuals = weekResults[0].hasOwnProperty('actual_yards');
-            const headers = [
-                'Week', 'Player Name', 'Team', 'Opponent', 'Betting Line', 'Odds', 
-                'Projection', 'Edge', 'Recommendation', 'Target Share %', 
-                'Weighted TPRR', 'Base YPT', 'Separation Score'
-            ];
-            if (hasActuals) {
-                headers.push('Actual Yards');
-                headers.push('Bet Outcome');
-            }
+            debugLog('Initiating CSV download...');
             
+            const hasActuals = weekResults[0]?.hasOwnProperty('actual_yards');
+            const headers = ['Week','Player Name','Team','Opponent','Betting Line','Odds','Projection','Edge','Recommendation','Target Share %','Weighted TPRR','Base YPT','Separation Score'];
+            if (hasActuals) headers.push('Actual Yards', 'Bet Outcome');
+
             let csvContent = headers.join(',') + '\n';
-            
-            weekResults.forEach(result => {
-                const row = [
-                    result.week,
-                    `"${result.player_name}"`,
-                    `"${result.team}"`,
-                    `"${result.opponent}"`,
-                    result.betting_line,
-                    result.odds,
-                    result.projection,
-                    result.edge,
-                    `"${result.recommendation}"`,
-                    result.target_share,
-                    result.weighted_tprr,
-                    result.base_ypt,
-                    result.separation_score
-                ];
-                if (hasActuals) {
-                    row.push(result.actual_yards !== undefined ? result.actual_yards : '');
-                    row.push(result.bet_outcome || '');
-                }
+            weekResults.forEach(r => {
+                const row = [r.week, `"${r.player_name}"`, `"${r.team}"`, `"${r.opponent}"`, r.betting_line, r.odds, r.projection, r.edge, `"${r.recommendation}"`, r.target_share, r.weighted_tprr, r.base_ypt, r.separation_score];
+                if (hasActuals) row.push(r.actual_yards ?? '', r.bet_outcome ?? '');
                 csvContent += row.join(',') + '\n';
             });
-
-            // Create and download file
-            const blob = new Blob([csvContent], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
+            
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const a = document.createElement('a');
-            a.href = url;
-            a.download = `nfl_receiving_yards_week_${currentWeek}_results.csv`;
-            document.body.appendChild(a);
+            a.href = URL.createObjectURL(blob);
+            a.download = `nfl_receiving_yards_week_${currentWeek}_audit.csv`;
             a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-
-            debugLog('CSV download initiated');
+            URL.revokeObjectURL(a.href);
         }
 
-        function showLoading(isLoading) {
-            document.getElementById('loadingDiv').style.display = isLoading ? 'block' : 'none';
+        function resetForNewWeek() {
+            weekResults = [];
+            gamelogData.clear();
+            hideAllMessages();
+            document.getElementById('detailedResultsContainer').innerHTML = '';
+            document.getElementById('gamelogCsvFile').value = '';
+        }
+
+        function showLoading(isLoading, text = '') {
+            const loadingDiv = document.getElementById('loadingDiv');
+            loadingDiv.textContent = text;
+            loadingDiv.style.display = isLoading ? 'block' : 'none';
+            document.getElementById('processWeekBtn').disabled = isLoading;
+        }
+
+        function updateProgress(current, total, text) {
+            document.getElementById('weekProgress').style.display = 'block';
+            document.getElementById('progressFill').style.width = `${(current / total) * 100}%`;
+            document.getElementById('progressText').textContent = `Processing ${current} of ${total}: ${text}`;
         }
 
         function showError(message) {
@@ -1475,12 +1075,22 @@
             successDiv.textContent = message;
             successDiv.style.display = 'block';
         }
-
+        
         function hideAllMessages() {
-            document.getElementById('errorDiv').style.display = 'none';
-            document.getElementById('successDiv').style.display = 'none';
-            document.getElementById('weekResults').style.display = 'none';
-            document.getElementById('gamelogUploadContainer').style.display = 'none';
+            ['errorDiv', 'successDiv', 'loadingDiv', 'weekResults', 'weekProgress'].forEach(id => {
+                document.getElementById(id).style.display = 'none';
+            });
+        }
+        
+        function enableDebugMode() {
+            document.getElementById('debugConsole').style.display = 'block';
+            debugLog('Debug mode enabled.');
+        }
+
+        function handleFatalError(message) {
+            enableDebugMode();
+            showError(message);
+            debugLog(message);
         }
     </script>
 </body>
