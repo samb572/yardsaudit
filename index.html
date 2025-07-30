@@ -511,6 +511,35 @@
             margin-top: 5px;
         }
         
+        /* New Styles for Detailed Results Table */
+        #detailedResultsContainer {
+            margin-top: 30px;
+            overflow-x: auto; /* For mobile responsiveness */
+        }
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        .results-table th, .results-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .results-table th {
+            background-color: rgba(255, 215, 0, 0.1);
+            color: #FFD700;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .results-table tr:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+        .results-table td.win { color: #22c55e; font-weight: bold; }
+        .results-table td.loss { color: #ef4444; font-weight: bold; }
+        .results-table td.push { color: #A0A0A0; }
+
         @media (max-width: 768px) {
             body {
                 padding: 10px;
@@ -582,7 +611,6 @@
                 
                 <button class="calculate-btn" id="processWeekBtn" disabled>Process Selected Week</button>
 
-                <!-- Debug Console -->
                 <div id="debugConsole" class="debug" style="display: none;">
                     <strong>Debug Console:</strong><br>
                     <div id="debugOutput"></div>
@@ -610,29 +638,24 @@
                     <p id="weekResultSummary">-</p>
                     
                     <div class="recommendations-grid" id="recommendationsGrid">
-                        <div class="recommendation-stat">
-                            <span class="count" id="greatOverCount">0</span>
-                            <span class="label">Great Over</span>
                         </div>
-                        <div class="recommendation-stat">
-                            <span class="count" id="moderateOverCount">0</span>
-                            <span class="label">Moderate Over</span>
-                        </div>
-                        <div class="recommendation-stat">
-                            <span class="count" id="passCount">0</span>
-                            <span class="label">Pass</span>
-                        </div>
-                        <div class="recommendation-stat">
-                            <span class="count" id="moderateUnderCount">0</span>
-                            <span class="label">Moderate Under</span>
-                        </div>
-                        <div class="recommendation-stat">
-                            <span class="count" id="greatUnderCount">0</span>
-                            <span class="label">Great Under</span>
-                        </div>
-                    </div>
                 </div>
                 
+                <div class="input-card" id="gamelogUploadContainer" style="margin-top: 30px; display: none;">
+                     <div class="csv-upload-info">
+                        <h4>Upload Gamelog CSV for Comparison</h4>
+                        <p>To see how the projections fared against actual results, upload a CSV with the outcomes for this week.</p>
+                        <p><strong>Expected format:</strong> player_name,yards</p>
+                     </div>
+                     <div class="input-group">
+                        <label for="gamelogCsvFile">Select Gamelog CSV File</label>
+                        <input type="file" id="gamelogCsvFile" accept=".csv" onchange="handleGamelogUpload(event)">
+                        <div class="info-text">Example: Jayden Reed,138</div>
+                     </div>
+                </div>
+
+                <div id="detailedResultsContainer"></div>
+
                 <div style="text-align: center; margin-top: 20px;">
                     <button class="download-btn" id="downloadBtn" onclick="downloadResults()">
                         📊 Download Week Results CSV
@@ -642,7 +665,6 @@
         </div>
     </div>
 
-    <!-- Load Supabase from CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
 
     <script>
@@ -671,6 +693,7 @@
         // Global variables
         let csvData = null;
         let weekResults = [];
+        let gamelogData = new Map();
         let currentWeek = null;
 
         // Initialize application
@@ -825,6 +848,59 @@
             reader.readAsText(file);
         }
 
+        // NEW: Function to handle gamelog CSV upload
+        function handleGamelogUpload(event) {
+            const file = event.target.files[0];
+            if (!file || weekResults.length === 0) return;
+
+            debugLog('Gamelog CSV selected: ' + file.name);
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const csvText = e.target.result;
+                    gamelogData = new Map();
+                    const lines = csvText.split('\n');
+
+                    lines.forEach(line => {
+                        if (line.trim()) {
+                            const parts = line.split(',');
+                            const playerName = parts[0].trim().replace(/"/g, '');
+                            const yards = parseFloat(parts[1]);
+                            if (playerName && !isNaN(yards)) {
+                                gamelogData.set(playerName, yards);
+                            }
+                        }
+                    });
+
+                    debugLog(`Gamelog parsed. ${gamelogData.size} entries found.`);
+
+                    // Merge gamelog data into weekResults
+                    weekResults.forEach(result => {
+                        if (gamelogData.has(result.player_name)) {
+                            result.actual_yards = gamelogData.get(result.player_name);
+                            // Determine bet outcome (assuming 'Over' bet)
+                            if (result.actual_yards > result.betting_line) {
+                                result.bet_outcome = 'WIN';
+                            } else if (result.actual_yards < result.betting_line) {
+                                result.bet_outcome = 'LOSS';
+                            } else {
+                                result.bet_outcome = 'PUSH';
+                            }
+                        }
+                    });
+
+                    // Re-render the detailed results table with the new data
+                    renderDetailedResultsTable(weekResults);
+                    showSuccess('Gamelog data loaded and results updated!');
+
+                } catch (error) {
+                    debugLog('Error parsing gamelog CSV: ' + error.message);
+                    showError('Error parsing gamelog file. Ensure format is "player_name,yards".');
+                }
+            };
+            reader.readAsText(file);
+        }
+
         function normalizeTeamName(input) {
             const teamMapping = {
                 'ARI': 'Arizona Cardinals', 'ATL': 'Atlanta Falcons', 'BAL': 'Baltimore Ravens',
@@ -877,6 +953,7 @@
 
             debugLog('Starting processing for Week ' + selectedWeek);
             currentWeek = selectedWeek;
+            gamelogData.clear(); // Clear old gamelog data
 
             // Filter data for selected week and only "Over" bets
             const weekData = csvData.filter(row => 
@@ -1245,13 +1322,9 @@
 
             // Calculate recommendation counts
             const recCounts = {
-                'GREAT OVER': 0,
-                'MODERATE OVER': 0,
-                'PASS': 0,
-                'MODERATE UNDER': 0,
-                'GREAT UNDER': 0
+                'GREAT OVER': 0, 'MODERATE OVER': 0, 'PASS': 0,
+                'MODERATE UNDER': 0, 'GREAT UNDER': 0
             };
-
             weekResults.forEach(result => {
                 recCounts[result.recommendation]++;
             });
@@ -1263,17 +1336,69 @@
             document.getElementById('weekResultSummary').textContent = 
                 `${weekResults.length} players processed with ${recCounts['GREAT OVER'] + recCounts['MODERATE OVER'] + recCounts['GREAT UNDER'] + recCounts['MODERATE UNDER']} actionable recommendations`;
 
-            document.getElementById('greatOverCount').textContent = recCounts['GREAT OVER'];
-            document.getElementById('moderateOverCount').textContent = recCounts['MODERATE OVER'];
-            document.getElementById('passCount').textContent = recCounts['PASS'];
-            document.getElementById('moderateUnderCount').textContent = recCounts['MODERATE UNDER'];
-            document.getElementById('greatUnderCount').textContent = recCounts['GREAT UNDER'];
+            const recommendationsGrid = document.getElementById('recommendationsGrid');
+            recommendationsGrid.innerHTML = `
+                <div class="recommendation-stat"><span class="count">${recCounts['GREAT OVER']}</span><span class="label">Great Over</span></div>
+                <div class="recommendation-stat"><span class="count">${recCounts['MODERATE OVER']}</span><span class="label">Moderate Over</span></div>
+                <div class="recommendation-stat"><span class="count">${recCounts['PASS']}</span><span class="label">Pass</span></div>
+                <div class="recommendation-stat"><span class="count">${recCounts['MODERATE UNDER']}</span><span class="label">Moderate Under</span></div>
+                <div class="recommendation-stat"><span class="count">${recCounts['GREAT UNDER']}</span><span class="label">Great Under</span></div>
+            `;
+            
+            // Render the detailed results table
+            renderDetailedResultsTable(weekResults);
 
-            // Hide progress and show results
+            // Hide progress and show results elements
             document.getElementById('weekProgress').style.display = 'none';
             document.getElementById('weekResults').style.display = 'block';
+            document.getElementById('gamelogUploadContainer').style.display = 'block';
 
             showSuccess(`Week ${currentWeek} processing complete! ${weekResults.length} projections generated.`);
+        }
+
+        // NEW: Renders the detailed results into an HTML table
+        function renderDetailedResultsTable(resultsData) {
+            const container = document.getElementById('detailedResultsContainer');
+            container.innerHTML = ''; // Clear previous results
+
+            if (resultsData.length === 0) return;
+
+            const table = document.createElement('table');
+            table.className = 'results-table';
+            
+            const thead = table.createTHead();
+            const headerRow = thead.insertRow();
+            
+            const headers = ['Player', 'Team', 'Opp', 'Line', 'Proj.', 'Edge', 'Rec.'];
+            const hasActuals = resultsData[0].hasOwnProperty('actual_yards');
+            if (hasActuals) {
+                headers.push('Actual');
+                headers.push('Outcome');
+            }
+            
+            headers.forEach(text => {
+                const th = document.createElement('th');
+                th.textContent = text;
+                headerRow.appendChild(th);
+            });
+
+            const tbody = table.createTBody();
+            resultsData.forEach(result => {
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${result.player_name}</td>
+                    <td>${result.team}</td>
+                    <td>${result.opponent}</td>
+                    <td>${result.betting_line.toFixed(1)}</td>
+                    <td>${result.projection.toFixed(1)}</td>
+                    <td>${result.edge}</td>
+                    <td>${result.recommendation}</td>
+                    ${hasActuals ? `<td>${result.actual_yards !== undefined ? result.actual_yards.toFixed(1) : 'N/A'}</td>` : ''}
+                    ${hasActuals ? `<td class="${(result.bet_outcome || '').toLowerCase()}">${result.bet_outcome || 'N/A'}</td>` : ''}
+                `;
+            });
+
+            container.appendChild(table);
         }
 
         function downloadResults() {
@@ -1285,11 +1410,16 @@
             debugLog(`Downloading results for ${weekResults.length} players`);
 
             // Create CSV content
+            const hasActuals = weekResults[0].hasOwnProperty('actual_yards');
             const headers = [
                 'Week', 'Player Name', 'Team', 'Opponent', 'Betting Line', 'Odds', 
                 'Projection', 'Edge', 'Recommendation', 'Target Share %', 
                 'Weighted TPRR', 'Base YPT', 'Separation Score'
             ];
+            if (hasActuals) {
+                headers.push('Actual Yards');
+                headers.push('Bet Outcome');
+            }
             
             let csvContent = headers.join(',') + '\n';
             
@@ -1309,6 +1439,10 @@
                     result.base_ypt,
                     result.separation_score
                 ];
+                if (hasActuals) {
+                    row.push(result.actual_yards !== undefined ? result.actual_yards : '');
+                    row.push(result.bet_outcome || '');
+                }
                 csvContent += row.join(',') + '\n';
             });
 
@@ -1346,6 +1480,7 @@
             document.getElementById('errorDiv').style.display = 'none';
             document.getElementById('successDiv').style.display = 'none';
             document.getElementById('weekResults').style.display = 'none';
+            document.getElementById('gamelogUploadContainer').style.display = 'none';
         }
     </script>
 </body>
