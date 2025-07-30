@@ -59,126 +59,8 @@
             100% { opacity: 1; }
         }
         
-        .password-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.9);
-            backdrop-filter: blur(10px);
-            z-index: 9999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        
-        .password-container {
-            background: rgba(255, 255, 255, 0.03);
-            border: 2px solid rgba(255, 215, 0, 0.3);
-            border-radius: 20px;
-            padding: 50px;
-            text-align: center;
-            max-width: 450px;
-            width: 100%;
-            backdrop-filter: blur(15px);
-            position: relative;
-            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
-        }
-
-        .password-container::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, #FFD700, transparent);
-            animation: shimmer 3s ease-in-out infinite alternate;
-        }
-        
-        .password-title {
-            font-size: 28px;
-            font-weight: 900;
-            color: #FFD700;
-            margin-bottom: 15px;
-            text-transform: uppercase;
-            letter-spacing: 3px;
-            text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.5);
-        }
-
-        .password-subtitle {
-            font-size: 14px;
-            color: rgba(255, 255, 255, 0.7);
-            margin-bottom: 30px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
-        
-        .password-input {
-            width: 100%;
-            padding: 18px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 2px solid rgba(255, 215, 0, 0.3);
-            border-radius: 12px;
-            color: white;
-            font-size: 18px;
-            text-align: center;
-            letter-spacing: 2px;
-            transition: all 0.3s ease;
-            margin: 20px 0;
-            outline: none;
-            font-weight: 600;
-        }
-
-        .password-input:focus {
-            border-color: #FFD700;
-            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
-            transform: scale(1.02);
-        }
-
-        .password-input::placeholder {
-            color: rgba(255, 255, 255, 0.5);
-            font-weight: 400;
-        }
-        
-        .password-submit {
-            width: 100%;
-            padding: 15px 40px;
-            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
-            color: #111a29;
-            border: none;
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: 800;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            box-shadow: 0 5px 20px rgba(255, 215, 0, 0.3);
-        }
-
-        .password-submit:hover {
-            transform: translateY(-3px) scale(1.05);
-            box-shadow: 0 8px 25px rgba(255, 215, 0, 0.5);
-        }
-        
-        .password-submit:active {
-            transform: translateY(0);
-        }
-        
-        .password-error {
-            color: #ff4444;
-            font-size: 14px;
-            margin-top: 15px;
-            display: none;
-            font-weight: 600;
-            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.3);
-        }
-        
         .main-content {
-            display: none;
+            display: block; /* Changed from none to block */
             position: relative;
             z-index: 1;
         }
@@ -547,14 +429,6 @@
                 font-size: 2.5rem;
             }
 
-            .password-container {
-                padding: 30px 20px;
-            }
-
-            .password-title {
-                font-size: 24px;
-            }
-            
             .input-card, .results {
                 padding: 20px;
             }
@@ -566,16 +440,6 @@
     </style>
 </head>
 <body>
-    <div class="password-overlay" id="passwordOverlay">
-        <div class="password-container">
-            <h2 class="password-title">Clear Edge</h2>
-            <p class="password-subtitle">NFL Receiving Yards Model</p>
-            <input type="password" class="password-input" id="passwordInput" placeholder="Enter Password" autocomplete="off">
-            <button class="password-submit" id="passwordSubmit">ACCESS MODEL</button>
-            <div class="password-error" id="passwordError">Incorrect password. Please try again.</div>
-        </div>
-    </div>
-
     <div class="main-content" id="mainContent">
         <div class="container">
             <h1>NFL Receiving Yards Model</h1>
@@ -679,7 +543,6 @@
                     throw new Error('Supabase library not loaded');
                 }
                 
-                setupPasswordHandling();
                 document.getElementById('processWeekBtn').addEventListener('click', processSelectedWeek);
                 setupSecurity();
                 debugLog('Application initialized successfully');
@@ -700,32 +563,7 @@
                 }
             });
         }
-
-        function setupPasswordHandling() {
-            const passwordOverlay = document.getElementById('passwordOverlay');
-            const mainContent = document.getElementById('mainContent');
-            const passwordInput = document.getElementById('passwordInput');
-            const passwordSubmitBtn = document.getElementById('passwordSubmit');
-            const passwordError = document.getElementById('passwordError');
-
-            const checkPassword = () => {
-                if (passwordInput.value === 'EdgingClearly') {
-                    passwordOverlay.style.display = 'none';
-                    mainContent.style.display = 'block';
-                    debugLog('Password authenticated successfully');
-                } else {
-                    passwordError.style.display = 'block';
-                    passwordInput.value = '';
-                    debugLog('Invalid password attempt');
-                    setTimeout(() => { passwordError.style.display = 'none'; }, 3000);
-                }
-            };
-
-            passwordSubmitBtn.addEventListener('click', checkPassword);
-            passwordInput.addEventListener('keypress', e => { if (e.key === 'Enter') checkPassword(); });
-            passwordInput.focus();
-        }
-
+        
         // --- FILE HANDLING ---
         function handleCSVUpload(event) {
             const file = event.target.files[0];
@@ -745,7 +583,7 @@
                         const row = {};
                         headers.forEach((header, index) => { row[header] = values[index]; });
                         return row;
-                    }).filter(Boolean); // Filter out any null rows
+                    }).filter(Boolean);
 
                     debugLog(`Total betting lines parsed: ${csvData.length}`);
                     updateUI_AfterCSVLoad();
@@ -781,7 +619,7 @@
                     debugLog(`Gamelog parsed. ${gamelogData.size} entries found.`);
                     
                     mergeGamelogData();
-                    renderDetailedResultsTable(weekResults); // Re-render table with actuals
+                    renderDetailedResultsTable(weekResults);
                     showSuccess('Gamelog loaded. Audit results are updated.');
 
                 } catch (error) {
@@ -827,7 +665,7 @@
                     errorCount++;
                     debugLog(`CRITICAL ERROR for ${weekData[i].player_name}: ${error.message}`);
                 }
-                await new Promise(resolve => setTimeout(resolve, 50)); // Prevent rate limiting
+                await new Promise(resolve => setTimeout(resolve, 50));
             }
 
             updateProgress(totalCount, totalCount, 'Complete');
@@ -894,7 +732,7 @@
 
             const separationBonus = Math.max(0, (weightedSeparation - 0.15) * 10);
             const adjustedYPT = baseYPT + separationBonus;
-            const gameScriptMultiplier = 0.85 + (3 * 0.075); // Neutral game flow
+            const gameScriptMultiplier = 0.85 + (3 * 0.075);
             const expectedTargets = routesPerGame * weightedTPRR;
             const expectedYards = expectedTargets * adjustedYPT * gameScriptMultiplier;
 
@@ -964,7 +802,7 @@
             
             renderDetailedResultsTable(weekResults);
             
-            document.getElementById('weekResults').style.display = 'block'; // This shows the entire results container including the gamelog uploader
+            document.getElementById('weekResults').style.display = 'block';
             showSuccess(`Week ${currentWeek} processing complete! Ready for audit.`);
         }
         
