@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Clear Edge Sports - NFL Receiving Yards Model</title>
+    <title>Clear Edge Sports - NFL Receptions Model</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -110,7 +110,7 @@
 <body>
     <div class="main-content" id="mainContent">
         <div class="container">
-            <h1>NFL Receiving Yards Model</h1>
+            <h1>NFL Receptions Model</h1>
             <p class="model-subtitle">Weekly Audit Tool</p>
             
             <div class="input-card">
@@ -126,7 +126,7 @@
 
                 <div class="csv-upload-info" style="margin-top: 40px;">
                     <h4>2. Upload Gamelog CSV</h4>
-                    <p>This should be the detailed player stats export. The tool will find the "Name" and "YDS" columns automatically.</p>
+                    <p>This should be the detailed player stats export. The tool will find the "Name" and "REC" columns automatically.</p>
                 </div>
                 <div class="input-group">
                     <label for="gamelogCsvFile">Select Gamelog CSV File</label>
@@ -251,10 +251,10 @@
             
             const headers = lines[headerRowIndex].trim().split(',').map(h => h.trim().replace(/"/g, ''));
             const nameIndex = headers.indexOf('Name');
-            const yardsIndex = headers.indexOf('YDS');
+            const receptionsIndex = headers.indexOf('REC');
 
-            if (nameIndex === -1 || yardsIndex === -1) {
-                throw new Error('Gamelog CSV must have "Name" and "YDS" columns.');
+            if (nameIndex === -1 || receptionsIndex === -1) {
+                throw new Error('Gamelog CSV must have "Name" and "REC" columns.');
             }
 
             const dataRows = lines.slice(headerRowIndex + 1);
@@ -262,9 +262,9 @@
             dataRows.forEach(line => {
                 const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
                 const playerName = values[nameIndex];
-                const yards = parseFloat(values[yardsIndex]);
-                if (playerName && !isNaN(yards)) {
-                    gamelogMap.set(playerName, yards);
+                const receptions = parseFloat(values[receptionsIndex]);
+                if (playerName && !isNaN(receptions)) {
+                    gamelogMap.set(playerName, receptions);
                 }
             });
             return gamelogMap;
@@ -316,25 +316,24 @@
         
         /**
          * Determines the bet outcome based on the model's recommendation.
-         * @param {string} recommendation - The model's recommendation (e.g., 'GREAT OVER', 'MODERATE UNDER').
-         * @param {number} actualYards - The player's actual yards.
+         * @param {string} recommendation - The model's recommendation (e.g., 'GOOD EDGE', 'NO EDGE').
+         * @param {number} actualReceptions - The player's actual receptions.
          * @param {number} bettingLine - The betting line for the player.
          * @returns {string} 'WIN', 'LOSS', 'PUSH', or 'N/A'.
          */
-        function determineBetOutcome(recommendation, actualYards, bettingLine) {
-            if (recommendation.includes('OVER')) {
-                if (actualYards > bettingLine) return 'WIN';
-                if (actualYards < bettingLine) return 'LOSS';
+        function determineBetOutcome(recommendation, actualReceptions, bettingLine) {
+            if (recommendation.includes('GOOD EDGE') || recommendation.includes('SLIGHT EDGE')) {
+                // This is an OVER recommendation
+                if (actualReceptions > bettingLine) return 'WIN';
+                if (actualReceptions < bettingLine) return 'LOSS';
                 return 'PUSH';
-            } else if (recommendation.includes('UNDER')) {
-                if (actualYards < bettingLine) return 'WIN';
-                if (actualYards > bettingLine) return 'LOSS';
-                return 'PUSH';
-            } else { // This handles 'PASS'
+            } else if (recommendation === 'NO EDGE') {
+                return 'N/A';
+            } else {
+                // This shouldn't happen with current recommendations, but handle it
                 return 'N/A';
             }
         }
-
 
         async function processSelectedWeek() {
             currentWeek = DOM.weekSelect.value;
@@ -375,26 +374,23 @@
                 const { data: pData, error: pErr } = await supabaseClient.from('player_cover_stats').select('team, tprr_player, routes_run, g, separation_score').eq('player_name', player_name).eq('season', SEASON).eq('coverage_type', 'Overall').single();
                 if (pErr) throw new Error(`Player data not found.`);
                 
-                const { data: yptData, error: yErr } = await supabaseClient.from('nfl_wr_general_stats').select('yards_per_target').eq('player_name', player_name).eq('season', SEASON).single();
-                if (yErr) throw new Error(`YPT data not found.`);
-
                 const routesPerGame = pData.routes_run && pData.g ? (pData.routes_run / pData.g) : 35;
                 const opponentTeam = getOpponentTeam(pData.team, home_team, away_team);
-                const projection = await calculateProjection(player_name, pData.team, opponentTeam, routesPerGame, yptData.yards_per_target);
+                const projection = await calculateProjection(player_name, pData.team, opponentTeam, routesPerGame, pData.tprr_player);
                 
-                const edge = projection.expectedYards - parseFloat(line);
+                const edge = projection.expectedReceptions - parseFloat(line);
                 const recommendation = getRecommendation(edge);
                 
                 const result = {
                     week: currentWeek, player_name, team: pData.team, opponent: opponentTeam, 
-                    betting_line: parseFloat(line), odds: parseInt(odds), projection: projection.expectedYards, 
+                    betting_line: parseFloat(line), odds: parseInt(odds), projection: projection.expectedReceptions, 
                     edge: edge.toFixed(1), recommendation: recommendation, ...projection.debugStats
                 };
                 
-                const actualYards = gamelogData.get(player_name);
-                if (actualYards !== undefined) {
-                    result.actual_yards = actualYards;
-                    result.bet_outcome = determineBetOutcome(recommendation, actualYards, result.betting_line);
+                const actualReceptions = gamelogData.get(player_name);
+                if (actualReceptions !== undefined) {
+                    result.actual_receptions = actualReceptions;
+                    result.bet_outcome = determineBetOutcome(recommendation, actualReceptions, result.betting_line);
                 }
 
                 return result;
@@ -405,7 +401,7 @@
             }
         }
 
-        async function calculateProjection(playerName, playerTeam, opponentTeam, routesPerGame, baseYPT) {
+        async function calculateProjection(playerName, playerTeam, opponentTeam, routesPerGame, baseTPRR) {
             const { data: oppCov, error: cErr } = await supabaseClient.from('defensive_coverages').select('*').eq('team_name', opponentTeam).eq('season', SEASON).single();
             if (cErr) throw new Error(`Coverage data for ${opponentTeam} not found.`);
             
@@ -429,14 +425,100 @@
             if (totalWeight === 0) throw new Error('Could not calculate weighted stats.');
             weightedTPRR /= totalWeight; weightedSep /= totalWeight;
             
-            const sepBonus = Math.max(0, (weightedSep - 0.15) * 10);
-            const adjYPT = baseYPT + sepBonus;
-            const gameScriptMult = 0.85 + (3 * 0.075);
-            const expectedYards = (routesPerGame * weightedTPRR) * adjYPT * gameScriptMult;
+            // Get most frequent coverage for display
+            const mostFrequent = covTypes.filter(c => c.pct > 0).sort((a, b) => b.pct - a.pct)[0] || { name: 'Cover 3', pct: 30 };
+
+            // Get defensive matchup stats
+            const { data: defStats, error: defError } = await supabaseClient
+                .from('defensive_matchups')
+                .select('tprr_allowed, catch_rate_allowed')
+                .eq('defensive_team_name', opponentTeam)
+                .eq('season', SEASON)
+                .eq('coverage_type', mostFrequent.name)
+                .limit(1);
+
+            const defMatchup = defStats && defStats[0] ? defStats[0] : { tprr_allowed: 0.185, catch_rate_allowed: 63 };
+
+            // Calculate receptions using the same formula as model.html
+            const targetShare = (baseTPRR * 100);
+            const gameFlow = 3; // Default to neutral
+            
+            const result = calculateReceptionScore(
+                weightedTPRR * 100,
+                weightedSep,
+                targetShare,
+                routesPerGame,
+                gameFlow,
+                mostFrequent.pct || 30,
+                defMatchup.tprr_allowed * 100,
+                defMatchup.catch_rate_allowed
+            );
             
             return {
-                expectedYards: parseFloat(expectedYards.toFixed(1)),
-                debugStats: { target_share: (statsMap.get('Overall')?.tprr_player * 100 || 0).toFixed(1), weighted_tprr: weightedTPRR.toFixed(4), base_ypt: baseYPT, separation_score: weightedSep.toFixed(3) }
+                expectedReceptions: parseFloat(result.expectedReceptions),
+                debugStats: { 
+                    target_share: targetShare.toFixed(1), 
+                    weighted_tprr: (weightedTPRR * 100).toFixed(1), 
+                    separation_score: weightedSep.toFixed(3),
+                    final_score: result.finalScore
+                }
+            };
+        }
+
+        function calculateReceptionScore(weightedTPRR, weightedSeparation, targetShare, routesPerGame, gameFlow, primaryCoverageFreq, defTPRR, defCatchRate) {
+            // === ADVANCED STATISTICAL MODEL (from model.html) ===
+            
+            // 1. EFFICIENCY COMPONENT (30% weight)
+            // Convert weighted TPRR to z-score vs NFL average (18.5% mean, 5.0% std dev)
+            const tprrZScore = (weightedTPRR - 18.5) / 5.0;
+            const efficiencyScore = Math.max(0, 50 + (tprrZScore * 15)); // 50 baseline ± 45 range
+            
+            // 2. VOLUME COMPONENT (30% weight)
+            // Total target opportunity = target share × routes per game
+            const totalOpportunity = (targetShare / 100) * routesPerGame;
+            const volumeScore = Math.min(totalOpportunity * 2.5, 100); // Linear scaling, natural cap at 40 targets
+            
+            // 3. SEPARATION COMPONENT (15% weight) 
+            // Convert separation to z-score vs NFL average (0.15 mean, 0.05 std dev)
+            const separationZScore = (weightedSeparation - 0.15) / 0.05;
+            const separationScore = Math.max(0, 50 + (separationZScore * 12)); // ±36 range
+            
+            // 4. DEFENSIVE MATCHUP COMPONENT (25% weight)
+            // Bidirectional - good defenses hurt score, bad defenses help
+            const defTPRRZScore = (defTPRR - 18.5) / 3.0; // Defense has smaller variance
+            const defCatchZScore = (defCatchRate - 63.0) / 5.0; // Average 63% catch rate vs WRs
+            const matchupScore = 50 + (defTPRRZScore * 10) + (defCatchZScore * 8); // Can go above/below 50
+            
+            // 5. GAME SCRIPT MULTIPLIER
+            // Heavy favorites (1) = 0.925x, Heavy underdogs (5) = 1.225x  
+            // Accounts for passing volume changes based on game flow
+            const gameScriptMultiplier = 0.85 + (gameFlow * 0.075);
+            
+            // === COMBINE COMPONENTS ===
+            const baseScore = (efficiencyScore * 0.30) + 
+                                (volumeScore * 0.30) + 
+                                (separationScore * 0.15) + 
+                                (matchupScore * 0.25);
+            
+            const finalScore = Math.min(baseScore * gameScriptMultiplier, 100);
+            
+            // === EXPECTED RECEPTIONS CALCULATION ===
+            // Base projection: routes × weighted TPRR × defensive catch rate × game script
+            const baseReceptions = routesPerGame * (weightedTPRR / 100) * (defCatchRate / 100) * gameScriptMultiplier;
+            
+            // Confidence factor based on model certainty
+            let confidenceFactor = 1.0;
+            if (finalScore >= 80) confidenceFactor = 1.15;      // High confidence boost
+            else if (finalScore >= 65) confidenceFactor = 1.05; // Moderate confidence boost  
+            else if (finalScore >= 50) confidenceFactor = 1.0;  // Neutral
+            else if (finalScore >= 20) confidenceFactor = 0.95; // Low confidence reduction
+            else confidenceFactor = 0.85;                        // Very low confidence reduction
+            
+            const expectedReceptions = (baseReceptions * confidenceFactor).toFixed(1);
+            
+            return {
+                finalScore: finalScore.toFixed(1),
+                expectedReceptions
             };
         }
         
@@ -460,16 +542,15 @@
 
         function displayWeekResults() {
             const counts = weekResults.reduce((acc, r) => ({...acc, [r.recommendation]: (acc[r.recommendation] || 0) + 1 }), {});
-            const totalActionable = (counts['GREAT OVER']||0) + (counts['MODERATE OVER']||0) + (counts['GREAT UNDER']||0) + (counts['MODERATE UNDER']||0);
+            const totalActionable = (counts['GOOD EDGE']||0) + (counts['SLIGHT EDGE']||0);
             
             DOM.weekResultTitle.textContent = `Week ${currentWeek} Audit Results`;
             DOM.weekResultSummary.textContent = `${weekResults.length} players processed with ${totalActionable} actionable recommendations.`;
             DOM.recommendationsGrid.innerHTML = `
-                <div class="recommendation-stat"><span class="count">${counts['GREAT OVER'] || 0}</span><span class="label">Great Over</span></div>
-                <div class="recommendation-stat"><span class="count">${counts['MODERATE OVER'] || 0}</span><span class="label">Moderate Over</span></div>
-                <div class="recommendation-stat"><span class="count">${counts['PASS'] || 0}</span><span class="label">Pass</span></div>
-                <div class="recommendation-stat"><span class="count">${counts['MODERATE UNDER'] || 0}</span><span class="label">Moderate Under</span></div>
-                <div class="recommendation-stat"><span class="count">${counts['GREAT UNDER'] || 0}</span><span class="label">Great Under</span></div>`;
+                <div class="recommendation-stat"><span class="count">${counts['GOOD EDGE'] || 0}</span><span class="label">Good Edge</span></div>
+                <div class="recommendation-stat"><span class="count">${counts['SLIGHT EDGE'] || 0}</span><span class="label">Slight Edge</span></div>
+                <div class="recommendation-stat"><span class="count">${counts['NEUTRAL'] || 0}</span><span class="label">Neutral</span></div>
+                <div class="recommendation-stat"><span class="count">${counts['NO EDGE'] || 0}</span><span class="label">No Edge</span></div>`;
             
             renderDetailedResultsTable();
             DOM.resultsContainer.style.display = 'block';
@@ -491,7 +572,7 @@
                 row.innerHTML = `
                     <td>${r.player_name}</td><td>${r.team}</td><td>${r.opponent}</td>
                     <td>${r.betting_line.toFixed(1)}</td><td>${r.projection.toFixed(1)}</td>
-                    <td>${r.actual_yards !== undefined ? r.actual_yards.toFixed(1) : 'N/A'}</td>
+                    <td>${r.actual_receptions !== undefined ? r.actual_receptions.toFixed(1) : 'N/A'}</td>
                     <td>${r.edge}</td>
                     <td class="${(r.bet_outcome || '').toLowerCase()}">${r.bet_outcome || 'N/A'}</td>
                     <td>${r.recommendation}</td>
@@ -501,9 +582,10 @@
         }
 
         function getRecommendation(edge) {
-            if (edge >= 15) return 'GREAT OVER'; if (edge >= 6) return 'MODERATE OVER';
-            if (edge <= -15) return 'GREAT UNDER'; if (edge <= -6) return 'MODERATE UNDER';
-            return 'PASS';
+            if (edge >= 1.5) return 'GOOD EDGE';
+            if (edge >= 0.5) return 'SLIGHT EDGE';
+            if (edge >= -0.5) return 'NEUTRAL';
+            return 'NO EDGE';
         }
         
         function getOpponentTeam(playerTeam, homeTeam, awayTeam) {
@@ -514,13 +596,13 @@
             if (!weekResults.length) { showError('No results to download.'); return; }
             debugLog('Initiating CSV download...');
             
-            let headers = ['Week','Player','Team','Opponent','Line','Odds','Projection','ActualYards','Edge','BetOutcome','Rec','TargetShare','WeightedTPRR','BaseYPT','SepScore'];
+            let headers = ['Week','Player','Team','Opponent','Line','Odds','Projection','ActualReceptions','Edge','BetOutcome','Rec','TargetShare','WeightedTPRR','SepScore','FinalScore'];
             let csvContent = headers.join(',') + '\n';
             weekResults.forEach(r => {
                 let row = [
                     r.week, `"${r.player_name}"`, `"${r.team}"`, `"${r.opponent}"`, r.betting_line, r.odds, 
-                    r.projection, r.actual_yards ?? '', r.edge, r.bet_outcome ?? '', `"${r.recommendation}"`, 
-                    r.target_share, r.weighted_tprr, r.base_ypt, r.separation_score
+                    r.projection, r.actual_receptions ?? '', r.edge, r.bet_outcome ?? '', `"${r.recommendation}"`, 
+                    r.target_share, r.weighted_tprr, r.separation_score, r.final_score
                 ];
                 csvContent += row.join(',') + '\n';
             });
@@ -528,7 +610,7 @@
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `nfl_receiving_yards_week_${currentWeek}_audit.csv`;
+            a.download = `nfl_receptions_week_${currentWeek}_audit.csv`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
