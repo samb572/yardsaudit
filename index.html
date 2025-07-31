@@ -252,6 +252,7 @@
             const headers = lines[headerRowIndex].trim().split(',').map(h => h.trim().replace(/"/g, ''));
             const nameIndex = headers.indexOf('Name');
             const receptionsIndex = headers.indexOf('REC');
+            const positionIndex = headers.indexOf('POS'); // Add position checking
 
             if (nameIndex === -1 || receptionsIndex === -1) {
                 throw new Error('Gamelog CSV must have "Name" and "REC" columns.');
@@ -259,14 +260,30 @@
 
             const dataRows = lines.slice(headerRowIndex + 1);
             const gamelogMap = new Map();
+            let excludedRBs = 0;
+            
             dataRows.forEach(line => {
                 const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
                 const playerName = values[nameIndex];
                 const receptions = parseFloat(values[receptionsIndex]);
+                const position = positionIndex !== -1 ? values[positionIndex] : '';
+                
+                // Filter out running backs
+                if (position && position.toUpperCase().includes('RB')) {
+                    excludedRBs++;
+                    debugLog(`Excluded RB: ${playerName} (${position})`);
+                    return;
+                }
+                
                 if (playerName && !isNaN(receptions)) {
                     gamelogMap.set(playerName, receptions);
                 }
             });
+            
+            if (excludedRBs > 0) {
+                debugLog(`Filtered out ${excludedRBs} running backs from gamelog data`);
+            }
+            
             return gamelogMap;
         }
 
@@ -315,25 +332,56 @@
         }
         
         /**
-         * Determines the bet outcome based on the model's recommendation.
-         * @param {string} recommendation - The model's recommendation 
-         * @param {number} actualReceptions - The player's actual receptions.
-         * @param {number} bettingLine - The betting line for the player.
-         * @returns {string} 'WIN', 'LOSS', 'PUSH', or 'N/A'.
+         * Enhanced bet outcome determination with proper N/A handling
          */
         function determineBetOutcome(recommendation, actualReceptions, bettingLine) {
-            // Only process OVER and UNDER recommendations (skip PASS)
+            // If actualReceptions is truly missing (undefined), return N/A
+            if (actualReceptions === undefined) {
+                return 'N/A';
+            }
+            
+            // If actualReceptions is 0 or null but player exists in gamelog, treat as 0 receptions
+            const receptions = actualReceptions === null ? 0 : actualReceptions;
+            
+            // Only process actionable recommendations
             if (recommendation.includes('OVER')) {
-                if (actualReceptions > bettingLine) return 'WIN';
-                if (actualReceptions < bettingLine) return 'LOSS';
+                if (receptions > bettingLine) return 'WIN';
+                if (receptions < bettingLine) return 'LOSS';
                 return 'PUSH';
             } else if (recommendation.includes('UNDER')) {
-                if (actualReceptions < bettingLine) return 'WIN';
-                if (actualReceptions > bettingLine) return 'LOSS';
+                if (receptions < bettingLine) return 'WIN';
+                if (receptions > bettingLine) return 'LOSS';
                 return 'PUSH';
             } else {
-                // PASS or any other recommendation
+                // PASS recommendations - no bet placed
                 return 'N/A';
+            }
+        }
+
+        /**
+         * Filter out running backs from betting data
+         */
+        async function isRunningBack(playerName) {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('player_cover_stats')
+                    .select('position')
+                    .eq('player_name', playerName)
+                    .eq('season', SEASON)
+                    .limit(1);
+                
+                if (data && data.length > 0 && data[0].position) {
+                    return data[0].position.toUpperCase().includes('RB');
+                }
+                
+                // If no position data, check if name contains common RB indicators
+                const rbIndicators = ['rb', 'running back', 'runningback'];
+                return rbIndicators.some(indicator => 
+                    playerName.toLowerCase().includes(indicator)
+                );
+            } catch (error) {
+                debugLog(`Could not determine position for ${playerName}: ${error.message}`);
+                return false;
             }
         }
 
@@ -350,9 +398,24 @@
             showLoading(true, `Processing ${weekData.length} players...`);
             updateProgress(0, weekData.length, 'Initializing...');
             
-            const allPromises = weekData.map((row, index) => 
-                processPlayer(row).finally(() => updateProgress(index + 1, weekData.length, row.player_name))
-            );
+            const allPromises = weekData.map(async (row, index) => {
+                try {
+                    // Check if player is a running back first
+                    const isRB = await isRunningBack(row.player_name);
+                    if (isRB) {
+                        debugLog(`Skipping RB: ${row.player_name}`);
+                        return null;
+                    }
+                    
+                    const result = await processPlayer(row);
+                    return result;
+                } catch (error) {
+                    debugLog(`Error processing ${row.player_name}: ${error.message}`);
+                    return null;
+                } finally {
+                    updateProgress(index + 1, weekData.length, row.player_name);
+                }
+            });
 
             const results = await Promise.all(allPromises);
             
@@ -363,7 +426,7 @@
             DOM.weekProgressContainer.style.display = 'none';
 
             if (weekResults.length > 0) {
-                debugLog(`Processing complete: ${weekResults.length} successful, ${errorCount} errors.`);
+                debugLog(`Processing complete: ${weekResults.length} successful, ${errorCount} filtered/errors.`);
                 displayWeekResults();
             } else {
                 handleFatalError(`No valid projections generated for Week ${currentWeek}. Check debug console.`);
@@ -400,10 +463,18 @@
                     edge: edge.toFixed(1), recommendation: recommendation, ...projection.debugStats
                 };
                 
-                const actualReceptions = gamelogData.get(player_name);
+                // Enhanced actual receptions handling
+                let actualReceptions = gamelogData.get(player_name);
                 if (actualReceptions !== undefined) {
+                    // Player found in gamelog
                     result.actual_receptions = actualReceptions;
                     result.bet_outcome = determineBetOutcome(recommendation, actualReceptions, result.betting_line);
+                } else {
+                    // Player not found in gamelog - assume 0 receptions and note it
+                    debugLog(`No gamelog data for ${player_name} - assuming 0 receptions`);
+                    result.actual_receptions = 0;
+                    result.bet_outcome = determineBetOutcome(recommendation, 0, result.betting_line);
+                    result.gamelog_missing = true; // Flag for reference
                 }
 
                 return result;
@@ -583,15 +654,31 @@
             const tbody = table.createTBody();
             weekResults.forEach(r => {
                 const row = tbody.insertRow();
+                const actualDisplay = r.actual_receptions !== undefined ? r.actual_receptions.toFixed(1) : 'N/A';
+                const outcomeClass = r.bet_outcome ? r.bet_outcome.toLowerCase() : '';
+                
                 row.innerHTML = `
-                    <td>${r.player_name}</td><td>${r.team}</td><td>${r.opponent}</td>
+                    <td>${r.player_name}${r.gamelog_missing ? ' *' : ''}</td>
+                    <td>${r.team}</td><td>${r.opponent}</td>
                     <td>${r.betting_line.toFixed(1)}</td><td>${r.projection.toFixed(1)}</td>
-                    <td>${r.actual_receptions !== undefined ? r.actual_receptions.toFixed(1) : 'N/A'}</td>
+                    <td>${actualDisplay}</td>
                     <td>${r.edge}</td>
-                    <td class="${(r.bet_outcome || '').toLowerCase()}">${r.bet_outcome || 'N/A'}</td>
+                    <td class="${outcomeClass}">${r.bet_outcome || 'N/A'}</td>
                     <td>${r.recommendation}</td>
                 `;
             });
+            
+            // Add footnote if any players had missing gamelog data
+            const missingGamelogCount = weekResults.filter(r => r.gamelog_missing).length;
+            if (missingGamelogCount > 0) {
+                const footnote = document.createElement('p');
+                footnote.style.fontSize = '12px';
+                footnote.style.color = '#ccc';
+                footnote.style.marginTop = '10px';
+                footnote.textContent = `* ${missingGamelogCount} player(s) had no gamelog data - assumed 0 receptions`;
+                DOM.detailedResultsContainer.appendChild(footnote);
+            }
+            
             DOM.detailedResultsContainer.appendChild(table);
         }
 
@@ -658,13 +745,13 @@
             if (!weekResults.length) { showError('No results to download.'); return; }
             debugLog('Initiating CSV download...');
             
-            let headers = ['Week','Player','Team','Opponent','Line','Odds','Projection','ActualReceptions','Edge','BetOutcome','Rec','TargetShare','WeightedTPRR','SepScore','FinalScore'];
+            let headers = ['Week','Player','Team','Opponent','Line','Odds','Projection','ActualReceptions','Edge','BetOutcome','Rec','TargetShare','WeightedTPRR','SepScore','FinalScore','GamelogMissing'];
             let csvContent = headers.join(',') + '\n';
             weekResults.forEach(r => {
                 let row = [
                     r.week, `"${r.player_name}"`, `"${r.team}"`, `"${r.opponent}"`, r.betting_line, r.odds, 
                     r.projection, r.actual_receptions ?? '', r.edge, r.bet_outcome ?? '', `"${r.recommendation}"`, 
-                    r.target_share, r.weighted_tprr, r.separation_score, r.final_score
+                    r.target_share, r.weighted_tprr, r.separation_score, r.final_score, r.gamelog_missing ? 'TRUE' : 'FALSE'
                 ];
                 csvContent += row.join(',') + '\n';
             });
