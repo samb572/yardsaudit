@@ -316,21 +316,23 @@
         
         /**
          * Determines the bet outcome based on the model's recommendation.
-         * @param {string} recommendation - The model's recommendation (e.g., 'GOOD EDGE', 'NO EDGE').
+         * @param {string} recommendation - The model's recommendation 
          * @param {number} actualReceptions - The player's actual receptions.
          * @param {number} bettingLine - The betting line for the player.
          * @returns {string} 'WIN', 'LOSS', 'PUSH', or 'N/A'.
          */
         function determineBetOutcome(recommendation, actualReceptions, bettingLine) {
-            if (recommendation.includes('GOOD EDGE') || recommendation.includes('SLIGHT EDGE')) {
-                // This is an OVER recommendation
+            // Only process OVER and UNDER recommendations (skip PASS)
+            if (recommendation.includes('OVER')) {
                 if (actualReceptions > bettingLine) return 'WIN';
                 if (actualReceptions < bettingLine) return 'LOSS';
                 return 'PUSH';
-            } else if (recommendation === 'NO EDGE') {
-                return 'N/A';
+            } else if (recommendation.includes('UNDER')) {
+                if (actualReceptions < bettingLine) return 'WIN';
+                if (actualReceptions > bettingLine) return 'LOSS';
+                return 'PUSH';
             } else {
-                // This shouldn't happen with current recommendations, but handle it
+                // PASS or any other recommendation
                 return 'N/A';
             }
         }
@@ -376,14 +378,25 @@
                 
                 const routesPerGame = pData.routes_run && pData.g ? (pData.routes_run / pData.g) : 35;
                 const opponentTeam = getOpponentTeam(pData.team, home_team, away_team);
+                
+                // Validate opponent is not the same as player team
+                if (normalizeTeamName(pData.team) === normalizeTeamName(opponentTeam)) {
+                    debugLog(`ERROR: ${player_name} - Player team (${pData.team}) matches opponent (${opponentTeam}). Check data integrity.`);
+                    throw new Error(`Invalid opponent data - team cannot play themselves`);
+                }
+                
                 const projection = await calculateProjection(player_name, pData.team, opponentTeam, routesPerGame, pData.tprr_player);
                 
-                const edge = projection.expectedReceptions - parseFloat(line);
+                const projectionValue = projection.expectedReceptions;
+                const bettingLine = parseFloat(line);
+                const edge = projectionValue - bettingLine;
                 const recommendation = getRecommendation(edge);
+                
+                debugLog(`${player_name}: Projection=${projectionValue.toFixed(1)}, Line=${bettingLine}, Edge=${edge.toFixed(1)}, Rec=${recommendation}`);
                 
                 const result = {
                     week: currentWeek, player_name, team: pData.team, opponent: opponentTeam, 
-                    betting_line: parseFloat(line), odds: parseInt(odds), projection: projection.expectedReceptions, 
+                    betting_line: bettingLine, odds: parseInt(odds), projection: projectionValue, 
                     edge: edge.toFixed(1), recommendation: recommendation, ...projection.debugStats
                 };
                 
@@ -426,7 +439,7 @@
             weightedTPRR /= totalWeight; weightedSep /= totalWeight;
             
             // Get most frequent coverage for display
-            const mostFrequent = covTypes.filter(c => c.pct > 0).sort((a, b) => b.pct - a.pct)[0] || { name: 'Cover 3', pct: 30 };
+            const mostFrequent = covTypes.filter(c => c.p > 0).sort((a, b) => b.p - a.p)[0] || { n: 'Cover 3', p: 30 };
 
             // Get defensive matchup stats
             const { data: defStats, error: defError } = await supabaseClient
@@ -434,7 +447,7 @@
                 .select('tprr_allowed, catch_rate_allowed')
                 .eq('defensive_team_name', opponentTeam)
                 .eq('season', SEASON)
-                .eq('coverage_type', mostFrequent.name)
+                .eq('coverage_type', mostFrequent.n)
                 .limit(1);
 
             const defMatchup = defStats && defStats[0] ? defStats[0] : { tprr_allowed: 0.185, catch_rate_allowed: 63 };
@@ -449,7 +462,7 @@
                 targetShare,
                 routesPerGame,
                 gameFlow,
-                mostFrequent.pct || 30,
+                mostFrequent.p || 30,
                 defMatchup.tprr_allowed * 100,
                 defMatchup.catch_rate_allowed
             );
@@ -542,15 +555,16 @@
 
         function displayWeekResults() {
             const counts = weekResults.reduce((acc, r) => ({...acc, [r.recommendation]: (acc[r.recommendation] || 0) + 1 }), {});
-            const totalActionable = (counts['GOOD EDGE']||0) + (counts['SLIGHT EDGE']||0);
+            const totalActionable = (counts['GREAT OVER']||0) + (counts['MODERATE OVER']||0) + (counts['GREAT UNDER']||0) + (counts['MODERATE UNDER']||0);
             
             DOM.weekResultTitle.textContent = `Week ${currentWeek} Audit Results`;
             DOM.weekResultSummary.textContent = `${weekResults.length} players processed with ${totalActionable} actionable recommendations.`;
             DOM.recommendationsGrid.innerHTML = `
-                <div class="recommendation-stat"><span class="count">${counts['GOOD EDGE'] || 0}</span><span class="label">Good Edge</span></div>
-                <div class="recommendation-stat"><span class="count">${counts['SLIGHT EDGE'] || 0}</span><span class="label">Slight Edge</span></div>
-                <div class="recommendation-stat"><span class="count">${counts['NEUTRAL'] || 0}</span><span class="label">Neutral</span></div>
-                <div class="recommendation-stat"><span class="count">${counts['NO EDGE'] || 0}</span><span class="label">No Edge</span></div>`;
+                <div class="recommendation-stat"><span class="count">${counts['GREAT OVER'] || 0}</span><span class="label">Great Over</span></div>
+                <div class="recommendation-stat"><span class="count">${counts['MODERATE OVER'] || 0}</span><span class="label">Moderate Over</span></div>
+                <div class="recommendation-stat"><span class="count">${counts['GREAT UNDER'] || 0}</span><span class="label">Great Under</span></div>
+                <div class="recommendation-stat"><span class="count">${counts['MODERATE UNDER'] || 0}</span><span class="label">Moderate Under</span></div>
+                <div class="recommendation-stat"><span class="count">${counts['PASS'] || 0}</span><span class="label">Pass</span></div>`;
             
             renderDetailedResultsTable();
             DOM.resultsContainer.style.display = 'block';
@@ -581,15 +595,63 @@
             DOM.detailedResultsContainer.appendChild(table);
         }
 
+        /**
+         * Updated recommendation logic:
+         * - PASS: projection within 0.5 of betting line (either direction)
+         * - MODERATE OVER/UNDER: projection difference 0.6-1.4 either way
+         * - GREAT OVER/UNDER: projection difference 1.5+ either way
+         */
         function getRecommendation(edge) {
-            if (edge >= 1.5) return 'GOOD EDGE';
-            if (edge >= 0.5) return 'SLIGHT EDGE';
-            if (edge >= -0.5) return 'NEUTRAL';
-            return 'NO EDGE';
+            const absEdge = Math.abs(edge);
+            
+            if (absEdge <= 0.5) {
+                return 'PASS';
+            } else if (absEdge >= 1.5) {
+                return edge > 0 ? 'GREAT OVER' : 'GREAT UNDER';
+            } else {
+                // 0.6 to 1.4 range
+                return edge > 0 ? 'MODERATE OVER' : 'MODERATE UNDER';
+            }
+        }
+        
+        /**
+         * Normalize team names for comparison (remove common variations)
+         */
+        function normalizeTeamName(teamName) {
+            return teamName.trim().toLowerCase()
+                .replace(/^new york/i, 'ny')
+                .replace(/^los angeles/i, 'la')
+                .replace(/^las vegas/i, 'lv')
+                .replace(/^new england/i, 'ne')
+                .replace(/^green bay/i, 'gb')
+                .replace(/^san francisco/i, 'sf')
+                .replace(/^tampa bay/i, 'tb');
         }
         
         function getOpponentTeam(playerTeam, homeTeam, awayTeam) {
-            return playerTeam.trim().toLowerCase() === homeTeam.trim().toLowerCase() ? awayTeam.trim() : homeTeam.trim();
+            const normalizedPlayerTeam = normalizeTeamName(playerTeam);
+            const normalizedHomeTeam = normalizeTeamName(homeTeam);
+            const normalizedAwayTeam = normalizeTeamName(awayTeam);
+            
+            if (normalizedPlayerTeam === normalizedHomeTeam) {
+                return awayTeam.trim();
+            } else if (normalizedPlayerTeam === normalizedAwayTeam) {
+                return homeTeam.trim();
+            } else {
+                // If no exact match, try to determine based on partial matching
+                const homeMatch = normalizedHomeTeam.includes(normalizedPlayerTeam) || normalizedPlayerTeam.includes(normalizedHomeTeam);
+                const awayMatch = normalizedAwayTeam.includes(normalizedPlayerTeam) || normalizedPlayerTeam.includes(normalizedAwayTeam);
+                
+                if (homeMatch && !awayMatch) {
+                    return awayTeam.trim();
+                } else if (awayMatch && !homeMatch) {
+                    return homeTeam.trim();
+                } else {
+                    // Default fallback - assume player is away team
+                    debugLog(`WARNING: Could not definitively match player team "${playerTeam}" to home "${homeTeam}" or away "${awayTeam}". Defaulting to home team as opponent.`);
+                    return homeTeam.trim();
+                }
+            }
         }
 
         function downloadResults() {
